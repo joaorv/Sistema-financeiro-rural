@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Extração de Dados de Nota Fiscal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- CSS Customizado -->
+  <link rel="stylesheet" href="/static/css/custom.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Cabeçalho Centralizado -->
+  <header class="text-center pt-10 pb-6 px-4">
+    <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Extração de Dados de Nota Fiscal</h1>
+    <p class="text-sm text-slate-500 mt-1">Carregue um PDF de nota fiscal e extraia os dados automaticamente usando IA</p>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="max-w-3xl mx-auto px-4 pb-12 flex-1 w-full space-y-6">
+
+    <!-- Aviso caso Gemini não esteja configurado -->
+    {% if not gemini_configurado %}
+    <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg shadow-sm">
+      <div class="flex items-start">
+        <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0"></i>
+        <div>
+          <h3 class="text-sm font-semibold text-amber-800">Chave de API do Gemini não detectada</h3>
+          <p class="text-xs text-amber-700 mt-1">
+            Abra o arquivo <code class="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">.env</code> na raiz do projeto e configure <code class="bg-amber-100 px-1 py-0.5 rounded font-mono">GEMINI_API_KEY=sua_chave</code>.
+          </p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Card 1: Upload do PDF -->
+    <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-4">
+      
+      <!-- Cabeçalho do Card -->
+      <div class="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+        <i data-lucide="upload" class="w-4 h-4 text-slate-700"></i>
+        <span>Upload do PDF</span>
+      </div>
+
+      <!-- Label do Campo -->
+      <div>
+        <label class="block text-xs font-medium text-slate-700 mb-2">
+          Selecione o arquivo PDF da nota fiscal
+        </label>
+        
+        <!-- Seletor de Arquivo com Estilo -->
+        <div id="file-picker-box" class="flex items-center gap-3 bg-[#f1f4f9] hover:bg-[#e9eef6] border border-slate-200/70 rounded-xl px-3 py-2 cursor-pointer transition">
+          <button type="button" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 shadow-xs pointer-events-none whitespace-nowrap">
+            Escolher arquivo
+          </button>
+          <span id="file-picker-name" class="text-xs text-slate-600 truncate font-mono">Nenhum arquivo selecionado</span>
+          <input type="file" id="file-input" accept="application/pdf,.pdf" class="hidden">
+        </div>
+      </div>
+
+      <!-- Pill do Arquivo Selecionado (exibição idêntica à foto) -->
+      <div id="file-info-container" class="hidden flex items-center justify-between bg-[#edf3fa] border border-[#dbe6f5] rounded-xl px-4 py-2.5 transition">
+        <div class="flex items-center space-x-2.5 truncate">
+          <i data-lucide="file-text" class="w-4 h-4 text-blue-600 flex-shrink-0"></i>
+          <span id="file-name" class="text-xs font-medium text-slate-800 truncate font-mono">nota_fiscal.pdf</span>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0 ml-3">
+          <span id="file-size" class="text-[11px] font-medium text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded-md">0.01 MB</span>
+          <button id="btn-remover" type="button" title="Trocar arquivo" class="text-slate-400 hover:text-red-500 p-0.5 transition">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Botão Extrair Dados -->
+      <button id="btn-processar" type="button" class="w-full bg-[#0a0f1d] hover:bg-slate-800 active:bg-black text-white text-xs font-bold uppercase tracking-wider py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition duration-150 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>
+        <span>EXTRAIR DADOS</span>
+      </button>
+
+    </section>
+
+    <!-- Indicador de Carregamento / Processamento -->
+    <div id="loading-indicator" class="hidden bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-sm">
+      <div class="inline-flex items-center justify-center w-12 h-12 bg-slate-100 text-slate-800 rounded-full mb-3 animate-pulse">
+        <i data-lucide="cpu" class="w-6 h-6"></i>
+      </div>
+      <h3 class="text-sm font-bold text-slate-900">Processando e Extraindo Dados com IA...</h3>
+      <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+        Analisando a nota fiscal e estruturando os campos de contas a pagar.
+      </p>
+      <div class="w-40 h-1.5 bg-slate-100 rounded-full mx-auto mt-4 overflow-hidden">
+        <div class="w-full h-full bg-slate-800 rounded-full animate-soft-pulse"></div>
+      </div>
+    </div>
+
+    <!-- Alerta de Erro -->
+    <div id="error-alert" class="hidden bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm">
+      <div class="flex items-start">
+        <i data-lucide="alert-circle" class="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0"></i>
+        <div>
+          <h3 class="text-sm font-semibold text-red-800">Falha no Processamento</h3>
+          <p id="error-message" class="text-xs text-red-700 mt-1">Ocorreu um erro ao processar a nota fiscal.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Dados Extraídos (Com Tabs Visualização Formatada e JSON) -->
+    <section id="results-section" class="hidden bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5">
+      
+      <!-- Título do Card -->
+      <h2 class="text-sm font-bold text-slate-900 tracking-tight">Dados Extraídos</h2>
+
+      <!-- Alternador de Abas (Tabs) -->
+      <div class="bg-[#eceef2] p-1 rounded-xl flex items-center">
+        <button id="tab-btn-formatada" type="button" class="flex-1 py-1.5 text-center text-xs font-semibold rounded-lg transition text-slate-600 hover:text-slate-900">
+          Visualização Formatada
+        </button>
+        <button id="tab-btn-json" type="button" class="flex-1 py-1.5 text-center text-xs font-semibold rounded-lg transition bg-white text-slate-900 shadow-xs">
+          JSON
+        </button>
+      </div>
+
+      <!-- Conteúdo da Aba: JSON (Default visual conforme a foto) -->
+      <div id="view-json" class="space-y-3">
+        <!-- Top bar com título e botão Copiar -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+            <span class="font-mono text-sm font-bold text-slate-800">&lt;&gt;</span>
+            <span>Dados em JSON</span>
+          </div>
+          <button id="btn-copiar-json" type="button" class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium rounded-lg transition flex items-center gap-1.5 shadow-2xs">
+            <i data-lucide="copy" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span id="copiar-text">Copiar JSON</span>
+          </button>
+        </div>
+
+        <!-- Bloco de Código com Dark Mode e syntax highlight -->
+        <div class="bg-[#0f172a] rounded-xl p-4 sm:p-5 border border-slate-800 shadow-inner overflow-hidden">
+          <pre class="overflow-x-auto max-h-[500px] overflow-y-auto custom-code-scroll text-xs font-mono leading-relaxed"><code id="json-viewer" class="block"></code></pre>
+        </div>
+
+        <!-- Rodapé explicativo da aba JSON -->
+        <p class="text-xs text-slate-500">
+          Este JSON contém todos os dados extraídos da nota fiscal e pode ser usado para integração com outros sistemas.
+        </p>
+      </div>
+
+      <!-- Conteúdo da Aba: Visualização Formatada -->
+      <div id="view-formatada" class="hidden space-y-4">
+        
+        <!-- Card: Classificação da Despesa -->
+        <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 shadow-2xs">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+              <i data-lucide="tag" class="w-4 h-4"></i>
+              Classificação da Despesa (LLM)
+            </span>
+            <span id="badge-categoria" class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-600 text-white shadow-xs">
+              -
+            </span>
+          </div>
+          <div class="mt-2 text-sm text-slate-700">
+            <p class="font-medium text-slate-900"><span class="text-slate-500 font-normal">Subcategoria sugerida:</span> <span id="card-subcategoria" class="font-semibold">-</span></p>
+            <p class="mt-1 text-xs text-slate-600 italic bg-white/80 p-3 rounded-lg border border-emerald-100" id="card-justificativa">
+              -
+            </p>
+          </div>
+        </div>
+
+        <!-- Card: Informações Principais da Nota -->
+        <div class="border border-slate-200 rounded-xl p-4 shadow-2xs bg-slate-50/50">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+            <i data-lucide="file-spreadsheet" class="w-4 h-4 text-slate-600"></i>
+            Dados Gerais da Fatura
+          </h3>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-white p-3 rounded-lg border border-slate-200">
+              <p class="text-xs text-slate-500 font-medium">Nº da Nota</p>
+              <p id="card-numero-nf" class="text-sm font-bold text-slate-800 mt-0.5 truncate">-</p>
+            </div>
+            <div class="bg-white p-3 rounded-lg border border-slate-200">
+              <p class="text-xs text-slate-500 font-medium">Data Emissão</p>
+              <p id="card-data-emissao" class="text-sm font-bold text-slate-800 mt-0.5 truncate">-</p>
+            </div>
+            <div class="bg-white p-3 rounded-lg border border-slate-200">
+              <p class="text-xs text-slate-500 font-medium">Vencimento</p>
+              <p id="card-data-vencimento" class="text-sm font-bold text-amber-700 mt-0.5 truncate">-</p>
+            </div>
+            <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
+              <p class="text-xs text-emerald-700 font-medium">Valor Total</p>
+              <p id="card-valor-total" class="text-base font-extrabold text-emerald-800 mt-0.5 truncate">R$ 0,00</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card: Fornecedor e Faturado -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Fornecedor -->
+          <div class="border border-slate-200 rounded-xl p-4 shadow-2xs bg-white">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+              <i data-lucide="building" class="w-4 h-4 text-emerald-600"></i>
+              Fornecedor (Emitente)
+            </h3>
+            <div class="space-y-1.5 text-sm">
+              <div>
+                <span class="text-xs text-slate-500">Razão Social:</span>
+                <p id="card-fornecedor-razao" class="font-semibold text-slate-800 truncate">-</p>
+              </div>
+              <div>
+                <span class="text-xs text-slate-500">Nome Fantasia:</span>
+                <p id="card-fornecedor-fantasia" class="text-slate-700 truncate">-</p>
+              </div>
+              <div>
+                <span class="text-xs text-slate-500">CNPJ:</span>
+                <p id="card-fornecedor-cnpj" class="font-mono text-xs font-medium text-slate-700 bg-slate-100 inline-block px-2 py-0.5 rounded">-</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Faturado -->
+          <div class="border border-slate-200 rounded-xl p-4 shadow-2xs bg-white">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+              <i data-lucide="user-check" class="w-4 h-4 text-emerald-600"></i>
+              Faturado (Destinatário)
+            </h3>
+            <div class="space-y-1.5 text-sm">
+              <div>
+                <span class="text-xs text-slate-500">Nome Completo:</span>
+                <p id="card-faturado-nome" class="font-semibold text-slate-800 truncate">-</p>
+              </div>
+              <div>
+                <span class="text-xs text-slate-500">CPF / CNPJ:</span>
+                <p id="card-faturado-cpf" class="font-mono text-xs font-medium text-slate-700 bg-slate-100 inline-block px-2 py-0.5 rounded">-</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card: Descrição dos Produtos e Parcelas -->
+        <div class="border border-slate-200 rounded-xl p-4 shadow-2xs bg-white">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+            <i data-lucide="package" class="w-4 h-4 text-emerald-600"></i>
+            Descrição dos Produtos / Serviços
+          </h3>
+          <p id="card-descricao-produtos" class="text-xs sm:text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-200/60 whitespace-pre-line leading-relaxed">
+            -
+          </p>
+
+          <div class="mt-4 pt-3 border-t border-slate-100">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400"></i>
+                Detalhamento de Parcelas (<span id="card-qtd-parcelas">1</span>)
+              </span>
+            </div>
+            <div id="lista-parcelas" class="space-y-1.5">
+              <!-- Preenchido via JS -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Script JS da aplicação -->
+  <script src="/static/js/app.js"></script>
+  <script>
+    // Inicializa ícones Lucide
+    lucide.createIcons();
+  </script>
+</body>
+</html>

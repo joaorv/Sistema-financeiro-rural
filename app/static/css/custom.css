@@ -1,0 +1,101 @@
+/* Estilos personalizados para o Processador de Notas Fiscais */
+
+/* Scrollbar personalizada geral */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Scrollbar exclusiva do bloco de código escuro */
+.custom-code-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-code-scroll::-webkit-scrollbar-track {
+  background: #0f172a;
+  border-radius: 4px;
+}
+
+.custom-code-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.custom-code-scroll::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Área de Dropzone e seletores */
+.dropzone-area {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Visualizador de JSON com destaque idêntico ao modelo da foto */
+pre code {
+  font-family: 'Consolas', 'Fira Code', 'Monaco', 'Courier New', monospace;
+  font-size: 0.8125rem; /* 13px */
+  line-height: 1.6;
+  color: #e2e8f0;
+}
+
+.json-key {
+  color: #4ade80; /* Verde menta/claro das chaves */
+  font-weight: 500;
+}
+
+.json-colon {
+  color: #94a3b8;
+  margin-right: 4px;
+}
+
+.json-string {
+  color: #7dd3fc; /* Azul/ciano claro para valores string */
+}
+
+.json-number {
+  color: #fbbf24; /* Âmbar/amarelo para números */
+}
+
+.json-boolean {
+  color: #c084fc; /* Roxo para booleanos */
+  font-weight: 600;
+}
+
+.json-null {
+  color: #f87171; /* Vermelho suave para nulos */
+  font-style: italic;
+}
+
+/* Transições suaves */
+.smooth-transition {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animação de pulso para processamento */
+@keyframes soft-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

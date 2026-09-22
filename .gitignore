@@ -1,0 +1,20 @@
+# Ambiente virtual
+venv/
+.venv/
+env/
+
+# Configurações sensíveis
+.env
+
+# Bytecode Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs e Editores
+.vscode/
+.idea/
+
+# Arquivos temporários e uploads de teste
+*.pdf
+temp/

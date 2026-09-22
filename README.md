@@ -46,7 +46,7 @@ Certifique-se de ter instalado em seu computador:
 Navegue até a pasta do projeto no seu terminal (PowerShell, CMD, Git Bash ou terminal do VS Code):
 
 ```bash
-cd "c:\Users\joaor\Desktop\Projeto Paraib"
+cd "c:\Users\caminho_da_pasta_do_projeto"
 ```
 
 ---

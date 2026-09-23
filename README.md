@@ -160,7 +160,7 @@ Abra o seu navegador web favorito e acesse:
 ## 📂 Estrutura do Projeto
 
 ```plaintext
-Projeto Paraib/
+Sistema-financeiro-rural/
 ├── app/
 │   ├── schemas/
 │   │   ├── __init__.py

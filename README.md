@@ -40,8 +40,9 @@ Para acessar o serviço localmente ou em ambiente de testes:
 
 O **Render.com** é uma plataforma em nuvem que oferece um plano gratuito perfeito para rodar aplicações FastAPI diretamente conectadas ao seu repositório GitHub.
 
-### Passo 1: Criar Conta no Render
-1. Acesse [render.com](https://render.com) e crie uma conta gratuita (você pode fazer login diretamente com sua conta do GitHub).
+```bash
+cd "c:\Users\caminho_da_pasta_do_projeto"
+```
 
 ### Passo 2: Criar um Novo Web Service
 1. No painel do Render, clique no botão **New +** e selecione **Web Service**.
@@ -124,7 +125,7 @@ A inteligência artificial analisa os produtos contidos na nota fiscal e realiza
 ## 📂 Estrutura do Projeto
 
 ```plaintext
-Gestão-Contas-Rural/
+Sistema-financeiro-rural/
 ├── app/
 │   ├── schemas/
 │   │   └── invoice.py         # Schemas e validação Pydantic dos dados da NF

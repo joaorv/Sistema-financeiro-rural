@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: gestao-contas-rural
+    runtime: python
+    plan: free
+    region: ohio
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: AUTH_USERNAME
+        value: admin
+      - key: AUTH_PASSWORD
+        value: rural2026!
+      - key: SESSION_SECRET_KEY
+        generateValue: true

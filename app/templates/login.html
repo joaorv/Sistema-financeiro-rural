@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acesso - Sistema Financeiro Rural</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- CSS Customizado -->
+  <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col justify-center items-center px-4 py-12 font-sans antialiased">
+
+  <div class="w-full max-w-md space-y-6">
+
+    <!-- Logotipo e Cabeçalho -->
+    <div class="text-center space-y-2">
+      <div class="inline-flex items-center justify-center w-14 h-14 bg-emerald-600 text-white rounded-2xl shadow-md shadow-emerald-500/20 mb-1">
+        <i data-lucide="sprout" class="w-7 h-7"></i>
+      </div>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">Gestão Contas Rural</h1>
+      <p class="text-xs text-slate-500">Módulo de Processamento Inteligente de Notas Fiscais</p>
+    </div>
+
+    <!-- Card de Login -->
+    <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-7 sm:p-8 space-y-5">
+      <div>
+        <h2 class="text-base font-bold text-slate-900">Entrar no Sistema</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Informe suas credenciais para acessar o serviço</p>
+      </div>
+
+      <!-- Alerta de Erro -->
+      <div id="login-error" class="hidden bg-red-50 border-l-4 border-red-500 p-3.5 rounded-r-xl text-xs text-red-700 flex items-start gap-2.5">
+        <i data-lucide="alert-circle" class="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0"></i>
+        <span id="login-error-msg">Usuário ou senha incorretos.</span>
+      </div>
+
+      <form id="form-login" class="space-y-4">
+        <!-- Campo Usuário -->
+        <div>
+          <label for="usuario" class="block text-xs font-semibold text-slate-700 mb-1.5">Usuário</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="user" class="w-4 h-4"></i>
+            </span>
+            <input 
+              type="text" 
+              id="usuario" 
+              name="usuario" 
+              required 
+              autocomplete="username"
+              placeholder="Digite seu usuário"
+              class="w-full pl-10 pr-3.5 py-2.5 text-xs bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 transition"
+            >
+          </div>
+        </div>
+
+        <!-- Campo Senha -->
+        <div>
+          <label for="senha" class="block text-xs font-semibold text-slate-700 mb-1.5">Senha</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="lock" class="w-4 h-4"></i>
+            </span>
+            <input 
+              type="password" 
+              id="senha" 
+              name="senha" 
+              required 
+              autocomplete="current-password"
+              placeholder="Digite sua senha"
+              class="w-full pl-10 pr-10 py-2.5 text-xs bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 transition"
+            >
+            <button 
+              type="button" 
+              id="toggle-senha" 
+              class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none transition"
+              title="Exibir/Ocultar Senha"
+            >
+              <i data-lucide="eye" id="icon-eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Botão Entrar -->
+        <button 
+          type="submit" 
+          id="btn-entrar" 
+          class="w-full mt-2 bg-[#0a0f1d] hover:bg-slate-800 active:bg-black text-white text-xs font-bold uppercase tracking-wider py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition shadow-sm disabled:opacity-50"
+        >
+          <i data-lucide="log-in" class="w-4 h-4"></i>
+          <span id="btn-text">ACESSAR O SERVIÇO</span>
+        </button>
+      </form>
+
+      <!-- Rodapé do Card -->
+      <div class="pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
+        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-600"></i>
+        <span>Acesso protegido com autenticação criptográfica</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Inicializa ícones Lucide
+    if (window.lucide) lucide.createIcons();
+
+    const formLogin = document.getElementById('form-login');
+    const inputUsuario = document.getElementById('usuario');
+    const inputSenha = document.getElementById('senha');
+    const toggleSenha = document.getElementById('toggle-senha');
+    const iconEye = document.getElementById('icon-eye');
+    const btnEntrar = document.getElementById('btn-entrar');
+    const btnText = document.getElementById('btn-text');
+    const errorBox = document.getElementById('login-error');
+    const errorMsg = document.getElementById('login-error-msg');
+
+    // Alternar visibilidade da senha
+    toggleSenha.addEventListener('click', () => {
+      const tipo = inputSenha.type === 'password' ? 'text' : 'password';
+      inputSenha.type = tipo;
+      iconEye.setAttribute('data-lucide', tipo === 'password' ? 'eye' : 'eye-off');
+      lucide.createIcons();
+    });
+
+    // Submissão do formulário
+    formLogin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.classList.add('hidden');
+      btnEntrar.disabled = true;
+      btnText.textContent = 'AUTENTICANDO...';
+
+      const usuario = inputUsuario.value.trim();
+      const senha = inputSenha.value;
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuario, senha })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || 'Falha ao autenticar.');
+        }
+
+        // Redireciona para o painel principal
+        window.location.href = '/';
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorBox.classList.remove('hidden');
+        lucide.createIcons();
+      } finally {
+        btnEntrar.disabled = false;
+        btnText.textContent = 'ACESSAR O SERVIÇO';
+      }
+    });
+  </script>
+</body>
+</html>

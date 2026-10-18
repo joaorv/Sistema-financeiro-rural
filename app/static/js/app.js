@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputApiKey = document.getElementById('input-api-key');
   const toggleModalKey = document.getElementById('toggle-modal-key');
   const iconEyeModal = document.getElementById('icon-eye-modal');
-  const btnLogout = document.getElementById('btn-logout');
 
   // --- Elementos de Upload ---
   const filePickerBox = document.getElementById('file-picker-box');
@@ -63,8 +62,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const cardQtdParcelas = document.getElementById('card-qtd-parcelas');
   const listaParcelas = document.getElementById('lista-parcelas');
 
+  // --- Análise no Banco de Dados e Lançamento (2ª Etapa) ---
+  const analiseSection = document.getElementById('analise-section');
+  const analiseCarregando = document.getElementById('analise-carregando');
+  const analiseResultado = document.getElementById('analise-resultado');
+  const analiseAviso = document.getElementById('analise-aviso');
+  const btnReanalisar = document.getElementById('btn-reanalisar');
+  const btnLancar = document.getElementById('btn-lancar');
+  const lancamentoSucesso = document.getElementById('lancamento-sucesso');
+
   let arquivoSelecionado = null;
   let ultimoJsonExtraido = null;
+  let notaLancada = false;  // impede lançar a mesma extração duas vezes
 
   // ==============================================================
   // 1. Gerenciamento da Chave Volátil do Gemini (sessionStorage)
@@ -148,21 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(abrirModalChave, 300);
   }
 
-  // ==============================================================
-  // 2. Logout Seguro
-  // ==============================================================
-
-  btnLogout.addEventListener('click', async () => {
-    // 1. Limpa a chave volátil da memória do navegador
-    sessionStorage.removeItem(STORAGE_KEY_GEMINI);
-    try {
-      // 2. Encerra a sessão no backend (limpa o cookie)
-      await fetch('/api/logout', { method: 'POST' });
-    } finally {
-      // 3. Redireciona para o login
-      window.location.href = '/login';
-    }
-  });
+  // (O logout seguro, que também descarta a chave volátil, fica em comum.js)
 
   // ==============================================================
   // 3. Handlers de Seleção de Arquivo e Drag & Drop
@@ -226,6 +221,8 @@ document.addEventListener('DOMContentLoaded', () => {
     filePickerName.textContent = 'Nenhum arquivo selecionado';
     fileInfoContainer.classList.add('hidden');
     resultsSection.classList.add('hidden');
+    analiseSection.classList.add('hidden');
+    ultimoJsonExtraido = null;
     ocultarErro();
   }
 
@@ -282,6 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ocultarErro();
     resultsSection.classList.add('hidden');
+    analiseSection.classList.add('hidden');
     loadingIndicator.classList.remove('hidden');
     btnProcessar.disabled = true;
 
@@ -317,6 +315,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       resultsSection.classList.remove('hidden');
       resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // 2ª Etapa: após a extração, consulta automaticamente o banco de dados
+      lancamentoSucesso.classList.add('hidden');
+      notaLancada = false;
+      analisarNota();
 
     } catch (err) {
       exibirErro(err.message);
@@ -406,7 +409,98 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ==============================================================
-  // 8. Funções Utilitárias
+  // 8. Análise no Banco de Dados (FORNECEDOR / FATURADO / DESPESA)
+  // ==============================================================
+
+  function blocoAnalise(titulo, item, rotuloDocumento) {
+    let situacao;
+    if (!item.existe) {
+      situacao = '<p class="font-extrabold text-red-600">NÃO EXISTE <span class="font-medium text-[11px] text-slate-500">(será criado ao lançar)</span></p>';
+    } else if (item.status === 'INATIVO') {
+      situacao = `<p class="font-extrabold text-blue-600">EXISTE – ID: ${item.id} <span class="font-semibold text-[11px] text-amber-700">(INATIVO – será reativado ao lançar)</span></p>`;
+    } else {
+      situacao = `<p class="font-extrabold text-blue-600">EXISTE – ID: ${item.id}</p>`;
+    }
+    const documento = rotuloDocumento
+      ? `<p class="text-xs text-slate-600">${rotuloDocumento}: <span class="font-mono">${Comum.escapar(Comum.formatarDocumento(item.documento))}</span></p>`
+      : '';
+    return `
+      <div>
+        <p class="text-xs font-extrabold uppercase tracking-wider text-slate-900">${titulo}</p>
+        <p class="font-medium text-slate-800">${Comum.escapar(item.descricao || 'Não informado')}</p>
+        ${documento}
+        ${situacao}
+      </div>`;
+  }
+
+  async function analisarNota() {
+    if (!ultimoJsonExtraido) return;
+    analiseSection.classList.remove('hidden');
+    analiseCarregando.classList.remove('hidden');
+    analiseResultado.innerHTML = '';
+    analiseAviso.classList.add('hidden');
+    btnLancar.disabled = true;
+
+    try {
+      const analise = await Comum.api('/api/analisar', { method: 'POST', body: ultimoJsonExtraido });
+      const faturadoDoc = (analise.faturado.documento || '').length === 14 ? 'CNPJ' : 'CPF';
+
+      analiseResultado.innerHTML =
+        blocoAnalise('Fornecedor', analise.fornecedor, 'CNPJ') +
+        blocoAnalise('Faturado', analise.faturado, faturadoDoc) +
+        analise.despesas.map(d => blocoAnalise('Despesa', d)).join('');
+
+      if (analise.movimento_existente_id) {
+        analiseAviso.innerHTML = `Esta nota já foi lançada (Movimento ID ${analise.movimento_existente_id}). ` +
+          `<a href="/contas/${analise.movimento_existente_id}/editar" class="font-bold underline">Ver lançamento</a>`;
+        analiseAviso.classList.remove('hidden');
+      } else {
+        btnLancar.disabled = notaLancada;
+      }
+    } catch (err) {
+      analiseResultado.innerHTML = `<p class="text-xs text-red-700">${Comum.escapar(err.message)}</p>`;
+    } finally {
+      analiseCarregando.classList.add('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  btnReanalisar.addEventListener('click', analisarNota);
+
+  // Cria o que não existe + MOVIMENTO + PARCELA(S) e informa o sucesso ao usuário
+  btnLancar.addEventListener('click', async () => {
+    if (!ultimoJsonExtraido) return;
+    btnLancar.disabled = true;
+    lancamentoSucesso.classList.add('hidden');
+    try {
+      const r = await Comum.api('/api/lancar', { method: 'POST', body: ultimoJsonExtraido });
+      const detalhes = [
+        ...r.criados.map(c => `Criado: ${c}`),
+        ...r.reativados.map(c => `Reativado: ${c}`),
+      ];
+      lancamentoSucesso.innerHTML = `
+        <div class="flex items-start gap-3">
+          <i data-lucide="check-circle" class="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0"></i>
+          <div class="text-xs text-emerald-800 space-y-1">
+            <p class="text-sm font-bold">${Comum.escapar(r.mensagem)}</p>
+            ${detalhes.map(d => `<p>• ${Comum.escapar(d)}</p>`).join('')}
+            <a href="/contas/${r.movimento_id}/editar" class="inline-block mt-1 font-bold underline">Ver registro lançado</a>
+          </div>
+        </div>`;
+      lancamentoSucesso.classList.remove('hidden');
+      notaLancada = true;
+      await analisarNota();  // atualiza a análise: agora tudo EXISTE
+      lancamentoSucesso.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      exibirErro(err.message);
+      btnLancar.disabled = false;
+    } finally {
+      if (window.lucide) lucide.createIcons();
+    }
+  });
+
+  // ==============================================================
+  // 9. Funções Utilitárias
   // ==============================================================
 
   function formatarMoedaBR(valor) {

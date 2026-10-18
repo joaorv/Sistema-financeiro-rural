@@ -1,0 +1,33 @@
+{% extends "cadastro_lista.html" %}
+{% block titulo %}Classificações{% endblock %}
+{% block entidade_plural %}Classificações <span class="text-sm font-medium text-slate-400">Tipos de Despesa e de Receita</span>{% endblock %}
+{% block entidade_busca %}Classificações{% endblock %}
+{% block entidade_tabela %}Classificações{% endblock %}
+{% block placeholder_busca %}Buscar pela descrição...{% endblock %}
+{% block rota_novo %}/classificacoes/novo{% if tipo %}?tipo={{ tipo }}{% endif %}{% endblock %}
+{% block texto_novo %}Inserir Nova Classificação{% endblock %}
+
+{% block filtro_tipo %}
+<div>
+  <label for="filtro-tipo" class="block text-[11px] font-semibold text-slate-500 mb-1">Tipo</label>
+  <select id="filtro-tipo" class="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+    <option value="">Despesas e receitas</option>
+    <option value="DESPESA" {% if tipo == "DESPESA" %}selected{% endif %}>Despesa</option>
+    <option value="RECEITA" {% if tipo == "RECEITA" %}selected{% endif %}>Receita</option>
+  </select>
+</div>
+{% endblock %}
+
+{% block config_js %}
+window.CRUD = {
+  endpoint: '/api/classificacoes',
+  rotaForm: '/classificacoes',
+  nome: 'classificação',
+  colunas: [
+    { campo: 'id', titulo: 'ID' },
+    { campo: 'tipo', titulo: 'Tipo' },
+    { campo: 'descricao', titulo: 'Descrição' },
+    { campo: 'status', titulo: 'Situação' },
+  ],
+};
+{% endblock %}

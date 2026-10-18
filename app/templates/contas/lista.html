@@ -1,0 +1,46 @@
+{% extends "cadastro_lista.html" %}
+{% block titulo %}Contas{% endblock %}
+{% block entidade_plural %}Contas <span class="text-sm font-medium text-slate-400">A Pagar e A Receber</span>{% endblock %}
+{% block entidade_busca %}Contas{% endblock %}
+{% block entidade_tabela %}Contas{% endblock %}
+{% block placeholder_busca %}Buscar por nº da nota, fornecedor/cliente, faturado, CNPJ, classificação ou descrição...{% endblock %}
+{% block rota_novo %}/contas/novo{% if tipo %}?tipo={{ tipo }}{% endif %}{% endblock %}
+{% block texto_novo %}Registrar Nova Conta{% endblock %}
+
+{% block filtro_tipo %}
+<div>
+  <label for="filtro-tipo" class="block text-[11px] font-semibold text-slate-500 mb-1">Tipo</label>
+  <select id="filtro-tipo" class="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+    <option value="">A pagar e a receber</option>
+    <option value="APAGAR" {% if tipo == "APAGAR" %}selected{% endif %}>A pagar</option>
+    <option value="ARECEBER" {% if tipo == "ARECEBER" %}selected{% endif %}>A receber</option>
+  </select>
+</div>
+{% endblock %}
+
+{% block config_js %}
+const parcelasAtivas = r => r.parcelas.filter(p => p.status === 'ATIVO');
+window.CRUD = {
+  endpoint: '/api/contas',
+  rotaForm: '/contas',
+  nome: 'conta',
+  colunas: [
+    { campo: 'id', titulo: 'ID' },
+    { campo: 'tipo', titulo: 'Tipo', valor: r => r.tipo === 'APAGAR' ? 'A PAGAR' : 'A RECEBER' },
+    { campo: 'numero_nota_fiscal', titulo: 'Nº Nota' },
+    { campo: 'pessoa', titulo: 'Fornecedor / Cliente', valor: r => r.pessoa.razao_social },
+    { campo: 'faturado', titulo: 'Faturado', valor: r => r.faturado ? r.faturado.razao_social : '-' },
+    { campo: 'classificacoes', titulo: 'Classificação', valor: r => r.classificacoes.map(c => c.descricao).join(', ') },
+    { campo: 'data_emissao', titulo: 'Emissão', valor: r => Comum.formatarData(r.data_emissao), ordenar: r => r.data_emissao },
+    {
+      campo: 'parcelas', titulo: 'Parcelas', html: true,
+      valor: r => parcelasAtivas(r).map(p =>
+        `<div class="whitespace-nowrap"><span class="font-semibold">${Comum.escapar(p.identificacao)}</span> · ${Comum.formatarData(p.data_vencimento)} · ${Comum.formatarMoeda(p.valor_parcela)}</div>`
+      ).join(''),
+      ordenar: r => parcelasAtivas(r).length,
+    },
+    { campo: 'valor_total', titulo: 'Valor Total', valor: r => Comum.formatarMoeda(r.valor_total), ordenar: r => r.valor_total },
+    { campo: 'status', titulo: 'Situação' },
+  ],
+};
+{% endblock %}

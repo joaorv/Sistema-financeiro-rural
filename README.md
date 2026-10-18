@@ -105,6 +105,67 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
+## 🗄️ 2ª Etapa: Análise no Banco e Lançamento de Contas
+
+Após a extração, o sistema consulta automaticamente o banco de dados e mostra, para cada item da nota:
+
+```
+FORNECEDOR   IGUAÇU MAQUINAS LTDA · CNPJ 11.111.111/0001-00   NÃO EXISTE
+FATURADO     BELTRANO DA SILVA · CPF 999.999.999-99            EXISTE – ID: 19
+DESPESA      MANUTENÇÃO E OPERAÇÃO                             EXISTE – ID: 22
+```
+
+Ao clicar em **LANÇAR CONTA A PAGAR**, em uma única transação, o sistema:
+
+1. Cria o novo FORNECEDOR (se for o caso)
+2. Cria o novo FATURADO (se for o caso)
+3. Cria a nova DESPESA (se for o caso)
+4. Cria o registro do MOVIMENTO (`APAGAR`) e suas PARCELAS (`ÚNICA` ou `1/N`, `2/N`...)
+5. Informa ao usuário que o registro foi lançado com sucesso
+
+Registros que existem, mas estão INATIVOS, são reativados. Uma nota já lançada (mesmo nº e fornecedor) não é lançada novamente.
+
+### Cadastros (CRUD)
+
+| Tela | Funcionalidades |
+| :--- | :--- |
+| **Pessoas** | Manter Fornecedor, Cliente e Faturado |
+| **Classificações** | Manter Tipo de Despesa e Tipo de Receita |
+| **Contas** | Registrar Contas a Pagar e a Receber (uma ou mais classificações e parcelas) |
+
+Todas seguem a recomendação de layout: tabela inicialmente vazia; carga pela **Busca** ou **Todos** (somente ATIVOS); ordenação por coluna; busca por mais de um elemento; ações **Editar / Excluir** (exclusão lógica: STATUS = INATIVO) e **Reativar**. O STATUS nunca aparece nos formulários (CREATE grava ATIVO).
+
+### Rotas da API
+
+| Método | Rota | Descrição |
+| :--- | :--- | :--- |
+| `POST` | `/api/analisar` | Consulta Fornecedor / Faturado / Despesa da nota extraída |
+| `POST` | `/api/lancar` | Cria o que faltar + movimento + parcelas |
+| `GET` | `/api/{pessoas,classificacoes,contas}?busca=&tipo=&status=ATIVO\|INATIVO\|TODOS` | Lista / busca |
+| `GET` | `/api/{entidade}/{id}` | Detalhe |
+| `POST` | `/api/{entidade}` | Inclui (STATUS = ATIVO) |
+| `PUT` | `/api/{entidade}/{id}` | Altera |
+| `DELETE` | `/api/{entidade}/{id}` | Exclusão lógica (STATUS = INATIVO) |
+| `POST` | `/api/{entidade}/{id}/reativar` | STATUS = ATIVO |
+
+A documentação interativa fica em `/docs`.
+
+### 🔌 Como conectar o banco de dados definitivo
+
+O sistema usa **SQLAlchemy** e funciona com qualquer banco suportado por ele. Sem configuração, usa um **SQLite local** (`rural.db`), útil para desenvolvimento.
+
+1. Instale o driver do banco escolhido (ex.: `psycopg2-binary` para PostgreSQL, `pymysql` para MySQL) e adicione-o ao `requirements.txt`.
+2. Defina a variável `DATABASE_URL` no `.env` (local) e nas *Environment Variables* do Render (veja exemplos em `.env.example`).
+3. Ao iniciar, a aplicação cria as tabelas que ainda não existirem.
+4. Se o banco já tiver tabelas com **outros nomes de tabelas/colunas**, ajuste somente `app/db/models.py`: altere `__tablename__` e passe o nome real como primeiro argumento de `mapped_column("nome_real", ...)`. O restante do sistema usa apenas os atributos Python.
+
+Tabelas: `pessoas`, `classificacao`, `movimento_contas`, `parcela_contas` e `movimento_classificacao` (N:N entre movimento e classificação).
+
+> [!WARNING]
+> No plano gratuito do Render o disco é apagado a cada deploy/reinício, então o SQLite **não** é persistente lá. Para a entrega, configure o `DATABASE_URL` do banco definitivo.
+
+---
+
 ## 🌾 Categorias de Despesas do Agronegócio (LLM)
 
 A inteligência artificial analisa os produtos contidos na nota fiscal e realiza a classificação automática em uma das seguintes categorias contábeis:
@@ -127,18 +188,34 @@ A inteligência artificial analisa os produtos contidos na nota fiscal e realiza
 ```plaintext
 Sistema-financeiro-rural/
 ├── app/
+│   ├── db/
+│   │   ├── database.py        # Conexão (DATABASE_URL), sessão e criação das tabelas
+│   │   └── models.py          # Tabelas: Pessoas, Classificacao, MovimentoContas, ParcelaContas
+│   ├── repositories/          # Único ponto de acesso ao banco (consultas e gravações)
+│   ├── routers/
+│   │   ├── cadastros.py       # API REST dos CRUDs (Pessoas, Classificações, Contas)
+│   │   ├── lancamento.py      # /api/analisar e /api/lancar (2ª etapa)
+│   │   └── paginas.py         # Páginas HTML dos cadastros
 │   ├── schemas/
-│   │   └── invoice.py         # Schemas e validação Pydantic dos dados da NF
+│   │   ├── invoice.py         # Schemas e validação Pydantic dos dados da NF
+│   │   ├── cadastros.py       # Schemas dos cadastros
+│   │   └── analise.py         # Schemas da análise e do lançamento
 │   ├── services/
-│   │   └── gemini_service.py  # Extração com Gemini e chave dinâmica em memória RAM
+│   │   ├── gemini_service.py  # Extração com Gemini e chave dinâmica em memória RAM
+│   │   ├── conta_service.py   # Regras de contas e parcelas
+│   │   └── lancamento_service.py # Análise da nota e lançamento (tudo ou nada)
 │   ├── static/
 │   │   ├── css/custom.css     # Estilos complementares
-│   │   └── js/app.js          # Lógica frontend (sessionStorage, upload, tabs)
+│   │   └── js/                # app.js (extração/análise), comum.js, crud_lista.js, crud_form.js, contas_form.js
 │   ├── templates/
+│   │   ├── base.html          # Layout com menu
 │   │   ├── login.html         # Página de autenticação segura
-│   │   └── index.html         # Painel principal com modal da chave e visualizador
+│   │   ├── index.html         # Extração, análise no banco e lançamento
+│   │   ├── cadastro_lista.html / cadastro_form.html  # Layouts genéricos do CRUD
+│   │   └── pessoas/ classificacoes/ contas/          # Telas de cada cadastro
 │   ├── auth.py                # Assinatura de sessão HMAC-SHA256 e Rate Limiting
-│   ├── config.py              # Configurações do servidor e segurança
+│   ├── config.py              # Configurações do servidor, segurança e banco
+│   ├── dependencies.py        # Verificação de sessão para rotas e páginas
 │   └── main.py                # Aplicação FastAPI, rotas protegidas e middleware
 ├── Procfile                   # Comando de inicialização para Render / PaaS
 ├── render.yaml                # Arquivo Blueprint para deploy em nuvem

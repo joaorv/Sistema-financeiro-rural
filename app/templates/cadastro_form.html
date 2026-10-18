@@ -1,0 +1,48 @@
+{#
+  Layout genérico do formulário de cadastro. As páginas filhas definem:
+    titulo_form, rota_lista, campos (inputs com name), config_js (window.FORM = {...})
+#}
+{% extends "base.html" %}
+
+{% block corpo %}
+<main class="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full space-y-5">
+
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+      {% if registro_id %}Editar{% else %}Novo(a){% endif %} {% block titulo_form %}{% endblock %}
+      {% if registro_id %}<span class="text-slate-400 font-medium text-base">#{{ registro_id }}</span>{% endif %}
+    </h1>
+    <a href="{% block rota_lista %}{% endblock %}" class="px-3 py-1.5 text-xs font-semibold bg-slate-500 hover:bg-slate-600 text-white rounded-lg inline-flex items-center gap-1">
+      <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Voltar
+    </a>
+  </div>
+
+  <div id="area-alerta" class="hidden"></div>
+
+  <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm">
+    <div class="px-5 py-3 border-b border-slate-100 text-xs font-bold text-blue-700">
+      Formulário de {{ self.titulo_form() }}
+    </div>
+    <form id="form-cadastro" class="p-5 space-y-5" novalidate>
+      {% block campos %}{% endblock %}
+
+      <div class="flex gap-2 pt-2 border-t border-slate-100">
+        <button id="btn-salvar" type="submit" class="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl inline-flex items-center gap-1.5 shadow-xs disabled:opacity-50">
+          <i data-lucide="save" class="w-3.5 h-3.5"></i> Salvar
+        </button>
+        <a href="{{ self.rota_lista() }}" class="px-4 py-2 text-xs font-bold bg-slate-500 hover:bg-slate-600 text-white rounded-xl inline-flex items-center gap-1.5">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i> Cancelar
+        </a>
+      </div>
+    </form>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% block config_js %}{% endblock %}
+</script>
+{% block scripts_extra %}{% endblock %}
+<script src="/static/js/crud_form.js"></script>
+{% endblock %}

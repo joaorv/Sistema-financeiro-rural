@@ -1,0 +1,77 @@
+{#
+  Layout genérico de listagem dos cadastros. As páginas filhas definem:
+    entidade_plural, entidade_singular, rota  -> via {% block %}
+    filtro_tipo                               -> <select id="filtro-tipo"> (opcional)
+    config_js                                 -> window.CRUD = {...}
+#}
+{% extends "base.html" %}
+
+{% block corpo %}
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full space-y-5">
+
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">{% block entidade_plural %}{% endblock %}</h1>
+  </div>
+
+  <div id="area-alerta" class="hidden"></div>
+
+  <!-- Card de busca -->
+  <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm">
+    <div class="px-5 py-3 border-b border-slate-100 text-xs font-bold text-blue-700">
+      Buscar {% block entidade_busca %}{% endblock %}
+    </div>
+    <div class="p-5 flex flex-col md:flex-row gap-3 md:items-end">
+      <div class="flex-1">
+        <label for="filtro-busca" class="block text-[11px] font-semibold text-slate-500 mb-1">Pesquisa</label>
+        <input id="filtro-busca" type="text" autocomplete="off"
+               placeholder="{% block placeholder_busca %}Buscar...{% endblock %}"
+               class="w-full px-3 py-2 text-xs bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600">
+      </div>
+      {% block filtro_tipo %}{% endblock %}
+      <div>
+        <label for="filtro-status" class="block text-[11px] font-semibold text-slate-500 mb-1">Situação</label>
+        <select id="filtro-status" class="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+          <option value="ATIVO">Ativos</option>
+          <option value="INATIVO">Inativos</option>
+          <option value="TODOS">Ativos e inativos</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-buscar" type="button" class="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl inline-flex items-center gap-1.5 shadow-xs">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i> Buscar
+        </button>
+        <button id="btn-todos" type="button" class="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl inline-flex items-center gap-1.5 shadow-xs" title="Carrega todos os registros ATIVOS">
+          <i data-lucide="list" class="w-3.5 h-3.5"></i> Todos
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Card da tabela -->
+  <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm">
+    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+      <span class="text-xs font-bold text-blue-700">Lista de {% block entidade_tabela %}{% endblock %}</span>
+      <span id="contador-registros" class="text-[11px] text-slate-400"></span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead class="bg-slate-50/60"><tr id="tabela-cabecalho"></tr></thead>
+        <tbody id="tabela-corpo"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="text-center">
+    <a href="{% block rota_novo %}{% endblock %}" class="inline-flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm">
+      <i data-lucide="plus" class="w-4 h-4"></i> {% block texto_novo %}Inserir Novo{% endblock %}
+    </a>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% block config_js %}{% endblock %}
+</script>
+<script src="/static/js/crud_lista.js"></script>
+{% endblock %}

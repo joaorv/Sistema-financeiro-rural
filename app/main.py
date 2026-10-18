@@ -1,4 +1,4 @@
-import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response, status, Header
@@ -10,22 +10,39 @@ from pydantic import BaseModel
 from app.config import settings
 from app.auth import (
     criar_token_sessao,
-    verificar_token_sessao,
     verificar_credenciais,
     verificar_rate_limit,
     registrar_falha_login,
     limpar_falhas_login,
 )
+from app.db.database import init_db
+from app.dependencies import obter_usuario_sessao
+from app.routers import cadastros, lancamento, paginas
 from app.schemas.invoice import ExtracaoNotaFiscalResponse
+from app.services.erros import RegraNegocioError
 from app.services.gemini_service import extrair_dados_nota_fiscal
 
 BASE_DIR = Path(__file__).resolve().parent
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Cria as tabelas que ainda não existirem no banco configurado em DATABASE_URL
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="Sistema de Gestão Financeira Rural - Processador de Notas",
     description="Web Service acadêmico seguro para extração e classificação de notas fiscais via IA Gemini",
-    version="2.0.0"
+    version="3.0.0",
+    lifespan=lifespan,
 )
+
+
+@app.exception_handler(RegraNegocioError)
+async def regra_negocio_handler(_request: Request, exc: RegraNegocioError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.mensagem})
 
 # -------------------------------------------------------------
 # Middleware de Segurança: Headers HTTP
@@ -54,14 +71,10 @@ templates_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 templates = Jinja2Templates(directory=str(templates_dir))
 
-
-# -------------------------------------------------------------
-# Utilitários de Autenticação e Sessão
-# -------------------------------------------------------------
-def obter_usuario_sessao(request: Request) -> Optional[str]:
-    """Extrai e valida o token de sessão a partir do cookie protegido."""
-    token = request.cookies.get(settings.SESSION_COOKIE_NAME)
-    return verificar_token_sessao(token)
+# Cadastros (CRUD), análise/lançamento da nota e páginas HTML dos cadastros
+app.include_router(cadastros.router)
+app.include_router(lancamento.router)
+app.include_router(paginas.criar_router(templates))
 
 
 class LoginRequest(BaseModel):
@@ -146,7 +159,8 @@ async def pagina_inicial(request: Request):
         request=request,
         name="index.html",
         context={
-            "usuario": usuario
+            "usuario": usuario,
+            "menu": "extracao"
         }
     )
 

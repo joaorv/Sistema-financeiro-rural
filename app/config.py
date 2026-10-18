@@ -31,6 +31,21 @@ class Settings:
             return self._generated_secret
         return secret
 
+    # Banco de dados (qualquer URL suportada pelo SQLAlchemy).
+    # Sem valor definido, usa um SQLite local apenas para desenvolvimento/testes.
+    # Exemplos:
+    #   postgresql+psycopg2://usuario:senha@host:5432/banco
+    #   mysql+pymysql://usuario:senha@host:3306/banco
+    @property
+    def DATABASE_URL(self) -> str:
+        url = os.getenv("DATABASE_URL", "").strip()
+        if not url:
+            return f"sqlite:///{(BASE_DIR / 'rural.db').as_posix()}"
+        # Render/Heroku fornecem "postgres://", que o SQLAlchemy não aceita
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
+
     # Limite de segurança para upload de PDF (10 MB)
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024
 

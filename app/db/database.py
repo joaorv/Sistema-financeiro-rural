@@ -32,7 +32,12 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Cria as tabelas que ainda não existem (não altera tabelas existentes)."""
+    """
+    Cria as tabelas que ainda não existem (não altera tabelas existentes).
+    Só roda no SQLite local; no PostgreSQL (Neon) o banco é criado por db/schema.sql.
+    """
+    if not _url.startswith("sqlite"):
+        return
     from app.db import models  # noqa: F401  (registra os models no metadata)
 
     Base.metadata.create_all(bind=engine)

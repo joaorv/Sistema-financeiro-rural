@@ -101,9 +101,9 @@ class ParcelaOut(BaseModel):
 
 class ContaIn(BaseModel):
     tipo: TipoMovimento
-    numero_nota_fiscal: Optional[str] = Field(None, max_length=50)
+    numero_nota_fiscal: Optional[str] = Field(None, max_length=45)
     data_emissao: Optional[date] = None
-    descricao: Optional[str] = None
+    descricao: Optional[str] = Field(None, max_length=300)
     valor_total: float = Field(..., gt=0)
     pessoa_id: int = Field(..., description="Fornecedor (A PAGAR) ou Cliente (A RECEBER)")
     faturado_id: Optional[int] = None

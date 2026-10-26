@@ -48,9 +48,9 @@
     tr.dataset.id = p.id || '';
     tr.innerHTML = `
       <td class="px-3 py-1.5 font-semibold text-slate-600 identificacao"></td>
-      <td class="px-3 py-1.5"><input type="date" class="venc px-2 py-1 border border-slate-200 rounded-lg bg-white" value="${p.data_vencimento || ''}"></td>
-      <td class="px-3 py-1.5"><input type="number" step="0.01" min="0.01" class="valor w-32 px-2 py-1 border border-slate-200 rounded-lg bg-white" value="${p.valor_parcela ?? ''}"></td>
-      <td class="px-3 py-1.5"><input type="number" step="0.01" min="0" class="pago w-32 px-2 py-1 border border-slate-200 rounded-lg bg-white" value="${p.valor_pago ?? 0}"></td>
+      <td class="px-3 py-1.5"><input type="date" class="venc px-2 py-1 border border-slate-200 rounded bg-white" value="${p.data_vencimento || ''}"></td>
+      <td class="px-3 py-1.5"><input type="number" step="0.01" min="0.01" class="valor w-32 px-2 py-1 border border-slate-200 rounded bg-white" value="${p.valor_parcela ?? ''}"></td>
+      <td class="px-3 py-1.5"><input type="number" step="0.01" min="0" class="pago w-32 px-2 py-1 border border-slate-200 rounded bg-white" value="${p.valor_pago ?? 0}"></td>
       <td class="px-3 py-1.5 text-right"><button type="button" class="remover text-slate-400 hover:text-red-600" title="Remover parcela"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button></td>`;
     $('corpo-parcelas').appendChild(tr);
     atualizarResumo();

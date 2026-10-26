@@ -10,7 +10,7 @@
 {% block filtro_tipo %}
 <div>
   <label for="filtro-tipo" class="block text-[11px] font-semibold text-slate-500 mb-1">Tipo</label>
-  <select id="filtro-tipo" class="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+  <select id="filtro-tipo" class="px-3 py-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
     <option value="">Todos os tipos</option>
     {% for t in ["FORNECEDOR", "CLIENTE", "FATURADO"] %}
       <option value="{{ t }}" {% if tipo == t %}selected{% endif %}>{{ t|capitalize }}</option>

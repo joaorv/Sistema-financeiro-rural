@@ -11,65 +11,71 @@
   <!-- CSS Customizado -->
   <link rel="stylesheet" href="/static/css/custom.css">
 </head>
-<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+<body class="bg-[#f4f6f9] text-slate-800 min-h-screen font-sans antialiased md:flex">
 
-  <!-- Barra Superior de Navegação -->
-  <nav class="bg-white border-b border-slate-200/80 sticky top-0 z-30 shadow-xs">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+  <!-- Barra superior (somente em telas pequenas) -->
+  <div class="md:hidden bg-[#343a40] text-white px-4 py-3 flex items-center justify-between sticky top-0 z-40">
+    <span class="font-bold">Sistema Rural</span>
+    <button id="btn-menu" type="button" class="p-1.5 rounded hover:bg-white/10" title="Abrir menu">
+      <i data-lucide="menu" class="w-5 h-5"></i>
+    </button>
+  </div>
 
-      <!-- Marca / Logo -->
-      <a href="/" class="flex items-center space-x-2.5">
-        <div class="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-          <i data-lucide="sprout" class="w-4.5 h-4.5"></i>
-        </div>
-        <div>
-          <span class="text-sm font-bold text-slate-900 block leading-tight">Gestão Rural</span>
-          <span class="text-[10px] text-slate-500 font-medium">Administrativo-Financeiro</span>
-        </div>
-      </a>
+  <!-- Menu lateral -->
+  {% set grupos_menu = [
+    [("extracao", "/", "file-search", "Extração de NF")],
+    [("pessoas", "/pessoas", "users", "Pessoas"),
+     ("classificacoes", "/classificacoes", "tags", "Classificações")],
+    [("contas", "/contas", "wallet", "Contas")],
+  ] %}
+  <aside id="menu-lateral" class="hidden md:flex flex-col w-full md:w-56 md:min-h-screen md:sticky md:top-0 md:h-screen bg-[#343a40] text-slate-300 shrink-0 z-30">
+    <a href="/" class="hidden md:block text-center text-white text-lg font-bold py-4 border-b border-white/10">Sistema Rural</a>
 
-      <!-- Controles: extras da página, Usuário e Logout -->
-      <div class="flex items-center gap-2 sm:gap-3">
-        {% block nav_extra %}{% endblock %}
-
-        <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-600 font-medium bg-slate-100 rounded-lg">
-          <i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i>
-          <span>{{ usuario }}</span>
-        </div>
-
-        <button
-          id="btn-logout"
-          type="button"
-          class="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-          title="Sair do sistema"
-        >
-          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-          <span class="hidden sm:inline">Sair</span>
-        </button>
+    <!-- Usuário logado -->
+    <div class="flex flex-col items-center gap-1.5 py-5 px-4 border-b border-white/10">
+      <div class="w-10 h-10 rounded-full bg-white text-[#343a40] flex items-center justify-center">
+        <i data-lucide="user" class="w-6 h-6"></i>
       </div>
+      <span class="text-xs font-bold text-white uppercase tracking-wide">{{ usuario }}</span>
+      <span class="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-600 text-white rounded">Usuário</span>
+      <button
+        id="btn-logout"
+        type="button"
+        class="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white border border-white/60 hover:bg-white/10 rounded transition"
+        title="Sair do sistema"
+      >
+        <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Sair
+      </button>
     </div>
 
-    <!-- Menu principal -->
-    {% set itens_menu = [
-      ("extracao", "/", "file-search", "Extração de NF"),
-      ("pessoas", "/pessoas", "users", "Pessoas"),
-      ("classificacoes", "/classificacoes", "tags", "Classificações"),
-      ("contas", "/contas", "wallet", "Contas"),
-    ] %}
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 flex gap-1 overflow-x-auto">
-      {% for chave, url, icone, rotulo in itens_menu %}
-        <a href="{{ url }}"
-           class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold whitespace-nowrap border-b-2 transition
-                  {% if menu == chave %}border-emerald-600 text-emerald-700{% else %}border-transparent text-slate-500 hover:text-slate-800{% endif %}">
-          <i data-lucide="{{ icone }}" class="w-3.5 h-3.5"></i>
-          {{ rotulo }}
-        </a>
+    <!-- Itens do menu -->
+    <nav class="flex-1 overflow-y-auto py-2">
+      {% for grupo in grupos_menu %}
+        {% if not loop.first %}<hr class="my-2 border-white/10">{% endif %}
+        {% for chave, url, icone, rotulo in grupo %}
+          <a href="{{ url }}"
+             class="flex items-center gap-2.5 px-4 py-2.5 text-sm transition
+                    {% if menu == chave %}bg-white/15 text-white font-semibold{% else %}hover:bg-white/5 hover:text-white{% endif %}">
+            <i data-lucide="{{ icone }}" class="w-4 h-4"></i>
+            {{ rotulo }}
+          </a>
+        {% endfor %}
       {% endfor %}
-    </div>
-  </nav>
+    </nav>
+  </aside>
 
-  {% block corpo %}{% endblock %}
+  <!-- Conteúdo -->
+  <div class="flex-1 min-w-0 flex flex-col min-h-screen">
+    <!-- Controles extras da página (oculto quando a página não define nenhum) -->
+    <div class="flex justify-end items-center gap-2 px-4 sm:px-6 pt-4 [&:not(:has(*))]:hidden">{% block nav_extra %}{% endblock %}</div>
+    {% block corpo %}{% endblock %}
+  </div>
 
+  <script>
+    document.getElementById('btn-menu').addEventListener('click', () => {
+      document.getElementById('menu-lateral').classList.toggle('hidden');
+    });
+  </script>
   <script src="/static/js/comum.js"></script>
   {% block scripts %}{% endblock %}
 </body>

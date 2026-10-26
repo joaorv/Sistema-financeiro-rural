@@ -34,16 +34,17 @@ class Settings:
     # Banco de dados (qualquer URL suportada pelo SQLAlchemy).
     # Sem valor definido, usa um SQLite local apenas para desenvolvimento/testes.
     # Exemplos:
-    #   postgresql+psycopg2://usuario:senha@host:5432/banco
+    #   postgresql://usuario:senha@ep-xxxx.sa-east-1.aws.neon.tech/neondb?sslmode=require  (Neon)
     #   mysql+pymysql://usuario:senha@host:3306/banco
     @property
     def DATABASE_URL(self) -> str:
         url = os.getenv("DATABASE_URL", "").strip()
         if not url:
             return f"sqlite:///{(BASE_DIR / 'rural.db').as_posix()}"
-        # Render/Heroku fornecem "postgres://", que o SQLAlchemy não aceita
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
+        # Render/Heroku/Neon fornecem "postgres://" ou "postgresql://"; usa o driver psycopg 3
+        for prefixo in ("postgres://", "postgresql://"):
+            if url.startswith(prefixo):
+                url = "postgresql+psycopg://" + url[len(prefixo):]
         return url
 
     # Limite de segurança para upload de PDF (10 MB)

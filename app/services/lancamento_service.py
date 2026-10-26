@@ -172,9 +172,9 @@ def lancar_nota(db: Session, nota: ExtracaoNotaFiscalResponse) -> LancamentoResp
 
     movimento = MovimentoContas(
         tipo="APAGAR",
-        numero_nota_fiscal=(nota.numero_nota_fiscal or "").strip() or None,
+        numero_nota_fiscal=(nota.numero_nota_fiscal or "").strip()[:45] or None,
         data_emissao=_para_data(nota.data_emissao),
-        descricao=nota.descricao_produtos,
+        descricao=(nota.descricao_produtos or "")[:300] or None,  # limite da coluna no banco
         valor_total=valor_total,
         pessoa_id=fornecedor.id,
         faturado_id=faturado.id if faturado else None,

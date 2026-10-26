@@ -150,16 +150,16 @@ Todas seguem a recomendação de layout: tabela inicialmente vazia; carga pela *
 
 A documentação interativa fica em `/docs`.
 
-### 🔌 Como conectar o banco de dados definitivo
+### 🔌 Banco de dados PostgreSQL no Neon
 
-O sistema usa **SQLAlchemy** e funciona com qualquer banco suportado por ele. Sem configuração, usa um **SQLite local** (`rural.db`), útil para desenvolvimento.
+Sem `DATABASE_URL`, o sistema usa um **SQLite local** (`rural.db`) para desenvolvimento, criado automaticamente. O banco definitivo é um **PostgreSQL no [Neon](https://neon.tech)**, criado pelos scripts da pasta `db/` (seguindo o diagrama do projeto):
 
-1. Instale o driver do banco escolhido (ex.: `psycopg2-binary` para PostgreSQL, `pymysql` para MySQL) e adicione-o ao `requirements.txt`.
-2. Defina a variável `DATABASE_URL` no `.env` (local) e nas *Environment Variables* do Render (veja exemplos em `.env.example`).
-3. Ao iniciar, a aplicação cria as tabelas que ainda não existirem.
-4. Se o banco já tiver tabelas com **outros nomes de tabelas/colunas**, ajuste somente `app/db/models.py`: altere `__tablename__` e passe o nome real como primeiro argumento de `mapped_column("nome_real", ...)`. O restante do sistema usa apenas os atributos Python.
+1. No painel do Neon, abra o **SQL Editor** e execute `db/schema.sql` (cria as tabelas) e depois `db/seed.sql` (classificações padrão de DESPESA/RECEITA). Pela linha de comando: `psql "<connection string>" -f db/schema.sql`.
+2. Copie a *connection string* do Neon (`postgresql://usuario:senha@ep-xxxx.neon.tech/neondb?sslmode=require`) para a variável `DATABASE_URL` no `.env` (local) e nas *Environment Variables* do Render.
+3. O driver `psycopg[binary]` (psycopg 3) já está no `requirements.txt`; a URL é convertida automaticamente para `postgresql+psycopg://`.
+4. No PostgreSQL a aplicação **não** cria nem altera tabelas: qualquer mudança de estrutura deve ser feita em `db/schema.sql` e refletida em `app/db/models.py` (`__tablename__` e o primeiro argumento de `mapped_column("nome_real", ...)`).
 
-Tabelas: `pessoas`, `classificacao`, `movimento_contas`, `parcela_contas` e `movimento_classificacao` (N:N entre movimento e classificação).
+Tabelas: `pessoas`, `classificacao`, `movimentocontas`, `parcelascontas` e `movimentocontas_has_classificacao` (N:N entre movimento e classificação).
 
 > [!WARNING]
 > No plano gratuito do Render o disco é apagado a cada deploy/reinício, então o SQLite **não** é persistente lá. Para a entrega, configure o `DATABASE_URL` do banco definitivo.

@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputApiKey = document.getElementById('input-api-key');
   const toggleModalKey = document.getElementById('toggle-modal-key');
   const iconEyeModal = document.getElementById('icon-eye-modal');
-  const btnLogout = document.getElementById('btn-logout');
 
   // --- Elementos de Upload ---
   const filePickerBox = document.getElementById('file-picker-box');
@@ -33,6 +32,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const loadingIndicator = document.getElementById('loading-indicator');
   const errorAlert = document.getElementById('error-alert');
   const errorMessageEl = document.getElementById('error-message');
+  const errorDetalhes = document.getElementById('error-detalhes');
+  const errorDetalhesTexto = document.getElementById('error-detalhes-texto');
+  const btnTentarNovamente = document.getElementById('btn-tentar-novamente');
+  const loadingEtapa = document.getElementById('loading-etapa');
+  const loadingSegundos = document.getElementById('loading-segundos');
+  const loadingFeed = document.getElementById('loading-feed');
+  const badgeTempo = document.getElementById('badge-tempo');
+  const badgeTempoTexto = document.getElementById('badge-tempo-texto');
 
   // --- Seção de Resultados ---
   const resultsSection = document.getElementById('results-section');
@@ -63,8 +70,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const cardQtdParcelas = document.getElementById('card-qtd-parcelas');
   const listaParcelas = document.getElementById('lista-parcelas');
 
+  // --- Análise no Banco de Dados e Lançamento (2ª Etapa) ---
+  const analiseSection = document.getElementById('analise-section');
+  const analiseCarregando = document.getElementById('analise-carregando');
+  const analiseResultado = document.getElementById('analise-resultado');
+  const analiseAviso = document.getElementById('analise-aviso');
+  const btnReanalisar = document.getElementById('btn-reanalisar');
+  const btnLancar = document.getElementById('btn-lancar');
+  const lancamentoSucesso = document.getElementById('lancamento-sucesso');
+
   let arquivoSelecionado = null;
   let ultimoJsonExtraido = null;
+  let notaLancada = false;  // impede lançar a mesma extração duas vezes
+  let cardTentativaAtual = null;
+  const cardTentativasPorModelo = new Map();
 
   // ==============================================================
   // 1. Gerenciamento da Chave Volátil do Gemini (sessionStorage)
@@ -148,21 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(abrirModalChave, 300);
   }
 
-  // ==============================================================
-  // 2. Logout Seguro
-  // ==============================================================
-
-  btnLogout.addEventListener('click', async () => {
-    // 1. Limpa a chave volátil da memória do navegador
-    sessionStorage.removeItem(STORAGE_KEY_GEMINI);
-    try {
-      // 2. Encerra a sessão no backend (limpa o cookie)
-      await fetch('/api/logout', { method: 'POST' });
-    } finally {
-      // 3. Redireciona para o login
-      window.location.href = '/login';
-    }
-  });
+  // (O logout seguro, que também descarta a chave volátil, fica em comum.js)
 
   // ==============================================================
   // 3. Handlers de Seleção de Arquivo e Drag & Drop
@@ -226,6 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
     filePickerName.textContent = 'Nenhum arquivo selecionado';
     fileInfoContainer.classList.add('hidden');
     resultsSection.classList.add('hidden');
+    analiseSection.classList.add('hidden');
+    ultimoJsonExtraido = null;
     ocultarErro();
   }
 
@@ -282,11 +289,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ocultarErro();
     resultsSection.classList.add('hidden');
+    analiseSection.classList.add('hidden');
     loadingIndicator.classList.remove('hidden');
     btnProcessar.disabled = true;
+    cardTentativaAtual = null;
+    cardTentativasPorModelo.clear();
+    if (loadingFeed) loadingFeed.innerHTML = '';
+    if (loadingEtapa) loadingEtapa.textContent = 'Enviando PDF para análise com IA...';
+    
+    const inicio = iniciarCronometro();
 
     const formData = new FormData();
     formData.append('arquivo', arquivoSelecionado);
+
+    let sucessoRecebido = false;
 
     try {
       const response = await fetch('/api/processar-nota', {
@@ -297,31 +313,68 @@ document.addEventListener('DOMContentLoaded', () => {
         body: formData,
       });
 
-      const data = await response.json();
-
-      // Sessão expirada
       if (response.status === 401) {
         window.location.href = '/login';
         return;
       }
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Erro ao processar a nota fiscal.');
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Erro ao comunicar com o servidor.');
       }
 
-      ultimoJsonExtraido = data;
-      renderizarResultados(data);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
 
-      // Garante que a aba JSON está ativa por padrão como no modelo
-      ativarAba('json');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      resultsSection.classList.remove('hidden');
-      resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        buffer += decoder.decode(value, { stream: true });
+        const blocos = buffer.split('\n\n');
+        buffer = blocos.pop(); // Mantém pedaço incompleto no buffer
+
+        for (const bloco of blocos) {
+          const linhas = bloco.split('\n');
+          for (const linha of linhas) {
+            const trimmed = linha.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const payload = trimmed.replace(/^data:\s*/, '');
+            try {
+              const evento = JSON.parse(payload);
+              await processarEventoStream(evento, inicio);
+              if (evento.tipo === 'sucesso') {
+                sucessoRecebido = true;
+              }
+            } catch (errJson) {
+              console.warn('Erro ao ler evento SSE:', errJson, payload);
+            }
+          }
+        }
+      }
+
+      if (!sucessoRecebido && !errorAlert.classList.contains('hidden')) {
+        // Erro já tratado no evento tipo 'erro'
+      } else if (!sucessoRecebido) {
+        throw new Error('A conexão foi encerrada antes da finalização da resposta.');
+      }
 
     } catch (err) {
-      exibirErro(err.message);
+      pararCronometro();
+      if (cardTentativaAtual) {
+        atualizarCardTentativa(cardTentativaAtual, {
+          tipo: 'erro',
+          mensagem: 'Falha no processamento',
+          detalhes: err.message
+        });
+        cardTentativaAtual = null;
+      } else {
+        adicionarItemFeed('erro', 'Falha no processamento', err.message);
+      }
+      exibirErroExtracao(err.message);
     } finally {
-      loadingIndicator.classList.add('hidden');
+      pararCronometro();
       btnProcessar.disabled = false;
       if (window.lucide) lucide.createIcons();
     }
@@ -406,7 +459,98 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ==============================================================
-  // 8. Funções Utilitárias
+  // 8. Análise no Banco de Dados (FORNECEDOR / FATURADO / DESPESA)
+  // ==============================================================
+
+  function blocoAnalise(titulo, item, rotuloDocumento) {
+    let situacao;
+    if (!item.existe) {
+      situacao = '<p class="font-extrabold text-red-600">NÃO EXISTE <span class="font-medium text-[11px] text-slate-500">(será criado ao lançar)</span></p>';
+    } else if (item.status === 'INATIVO') {
+      situacao = `<p class="font-extrabold text-blue-600">EXISTE – ID: ${item.id} <span class="font-semibold text-[11px] text-amber-700">(INATIVO – será reativado ao lançar)</span></p>`;
+    } else {
+      situacao = `<p class="font-extrabold text-blue-600">EXISTE – ID: ${item.id}</p>`;
+    }
+    const documento = rotuloDocumento
+      ? `<p class="text-xs text-slate-600">${rotuloDocumento}: <span class="font-mono">${Comum.escapar(Comum.formatarDocumento(item.documento))}</span></p>`
+      : '';
+    return `
+      <div>
+        <p class="text-xs font-extrabold uppercase tracking-wider text-slate-900">${titulo}</p>
+        <p class="font-medium text-slate-800">${Comum.escapar(item.descricao || 'Não informado')}</p>
+        ${documento}
+        ${situacao}
+      </div>`;
+  }
+
+  async function analisarNota() {
+    if (!ultimoJsonExtraido) return;
+    analiseSection.classList.remove('hidden');
+    analiseCarregando.classList.remove('hidden');
+    analiseResultado.innerHTML = '';
+    analiseAviso.classList.add('hidden');
+    btnLancar.disabled = true;
+
+    try {
+      const analise = await Comum.api('/api/analisar', { method: 'POST', body: ultimoJsonExtraido });
+      const faturadoDoc = (analise.faturado.documento || '').length === 14 ? 'CNPJ' : 'CPF';
+
+      analiseResultado.innerHTML =
+        blocoAnalise('Fornecedor', analise.fornecedor, 'CNPJ') +
+        blocoAnalise('Faturado', analise.faturado, faturadoDoc) +
+        analise.despesas.map(d => blocoAnalise('Despesa', d)).join('');
+
+      if (analise.movimento_existente_id) {
+        analiseAviso.innerHTML = `Esta nota já foi lançada (Movimento ID ${analise.movimento_existente_id}). ` +
+          `<a href="/contas/${analise.movimento_existente_id}/editar" class="font-bold underline">Ver lançamento</a>`;
+        analiseAviso.classList.remove('hidden');
+      } else {
+        btnLancar.disabled = notaLancada;
+      }
+    } catch (err) {
+      analiseResultado.innerHTML = `<p class="text-xs text-red-700">${Comum.escapar(err.message)}</p>`;
+    } finally {
+      analiseCarregando.classList.add('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  btnReanalisar.addEventListener('click', analisarNota);
+
+  // Cria o que não existe + MOVIMENTO + PARCELA(S) e informa o sucesso ao usuário
+  btnLancar.addEventListener('click', async () => {
+    if (!ultimoJsonExtraido) return;
+    btnLancar.disabled = true;
+    lancamentoSucesso.classList.add('hidden');
+    try {
+      const r = await Comum.api('/api/lancar', { method: 'POST', body: ultimoJsonExtraido });
+      const detalhes = [
+        ...r.criados.map(c => `Criado: ${c}`),
+        ...r.reativados.map(c => `Reativado: ${c}`),
+      ];
+      lancamentoSucesso.innerHTML = `
+        <div class="flex items-start gap-3">
+          <i data-lucide="check-circle" class="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0"></i>
+          <div class="text-xs text-emerald-800 space-y-1">
+            <p class="text-sm font-bold">${Comum.escapar(r.mensagem)}</p>
+            ${detalhes.map(d => `<p>• ${Comum.escapar(d)}</p>`).join('')}
+            <a href="/contas/${r.movimento_id}/editar" class="inline-block mt-1 font-bold underline">Ver registro lançado</a>
+          </div>
+        </div>`;
+      lancamentoSucesso.classList.remove('hidden');
+      notaLancada = true;
+      await analisarNota();  // atualiza a análise: agora tudo EXISTE
+      lancamentoSucesso.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      exibirErro(err.message);
+      btnLancar.disabled = false;
+    } finally {
+      if (window.lucide) lucide.createIcons();
+    }
+  });
+
+  // ==============================================================
+  // 9. Funções Utilitárias
   // ==============================================================
 
   function formatarMoedaBR(valor) {
@@ -448,10 +592,239 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
-  function exibirErro(msg) {
+  function exibirErro(msg, detalhes = '', podeTentarNovamente = false) {
     errorMessageEl.textContent = msg;
+    errorDetalhesTexto.textContent = detalhes;
+    errorDetalhes.classList.toggle('hidden', !detalhes);
+    errorDetalhes.open = false;
+    btnTentarNovamente.classList.toggle('hidden', !podeTentarNovamente);
     errorAlert.classList.remove('hidden');
     if (window.lucide) lucide.createIcons();
+  }
+
+  // Traduz os erros técnicos da API do Gemini para mensagens amigáveis
+  function exibirErroExtracao(msg) {
+    const traducoes = [
+      [/API key|API_KEY_INVALID|PERMISSION_DENIED|\b40[13]\b/i, 'Sua chave de API do Gemini parece inválida ou sem permissão. Verifique a chave e tente novamente.'],
+      [/\b503\b|UNAVAILABLE|high demand/i, 'Os servidores do Gemini estão com alta demanda. Tente novamente em alguns instantes.'],
+      [/\b429\b|RESOURCE_EXHAUSTED|quota/i, 'O limite de uso da sua chave do Gemini foi atingido. Aguarde alguns minutos e tente novamente.'],
+      [/timeout|timed out|DEADLINE/i, 'A IA demorou demais para responder. Tente novamente.'],
+      [/Failed to fetch|NetworkError/i, 'Não foi possível conectar ao servidor. Verifique sua conexão.'],
+    ];
+    const encontrada = traducoes.find(([padrao]) => padrao.test(msg));
+    if (encontrada) {
+      exibirErro(encontrada[1], msg, true);
+    } else {
+      exibirErro(msg, '', true);  // mensagens do servidor já em português
+    }
+  }
+
+  btnTentarNovamente.addEventListener('click', () => btnProcessar.click());
+
+  // ==============================================================
+  // Feedback Visual em Tempo Real (SSE Streaming + Cronômetro)
+  // ==============================================================
+
+  let timerInterval = null;
+
+  function iniciarCronometro() {
+    const inicio = Date.now();
+    if (loadingSegundos) loadingSegundos.textContent = '0,0s';
+    badgeTempo.classList.add('hidden');
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      const s = ((Date.now() - inicio) / 1000).toFixed(1).replace('.', ',');
+      if (loadingSegundos) loadingSegundos.textContent = `${s}s`;
+    }, 100);
+    return inicio;
+  }
+
+  function pararCronometro() {
+    clearInterval(timerInterval);
+  }
+
+  function adicionarItemFeed(tipo, mensagem, detalhes = '') {
+    if (!loadingFeed) return null;
+    const item = document.createElement('div');
+    item.className = 'flex items-start gap-2.5 p-2.5 rounded-xl text-xs transition-all';
+
+    let icone = 'clock';
+    let corFundo = 'bg-slate-50 border border-slate-100 text-slate-700';
+
+    if (tipo === 'info') {
+      icone = 'info';
+      corFundo = 'bg-slate-50 border border-slate-200 text-slate-700';
+    } else if (tipo === 'tentativa') {
+      icone = 'loader-2';
+      corFundo = 'bg-blue-50/70 border border-blue-200 text-blue-900 font-medium';
+    } else if (tipo === 'aviso') {
+      icone = 'alert-triangle';
+      corFundo = 'bg-amber-50/90 border border-amber-200 text-amber-900';
+    } else if (tipo === 'sucesso') {
+      icone = 'check-circle-2';
+      corFundo = 'bg-emerald-50 border border-emerald-200 text-emerald-900 font-semibold';
+    } else if (tipo === 'erro') {
+      icone = 'x-circle';
+      corFundo = 'bg-red-50/80 border border-red-200 text-red-900 font-semibold';
+    }
+
+    item.className += ' ' + corFundo;
+    item.innerHTML = `
+      <i data-lucide="${icone}" class="w-4 h-4 mt-0.5 flex-shrink-0 ${tipo === 'tentativa' ? 'animate-spin text-blue-600' : ''}"></i>
+      <div class="flex-1">
+        <div class="feed-item-titulo">${mensagem}</div>
+        ${detalhes ? `<div class="feed-item-detalhes mt-0.5 text-[10px] opacity-75 font-mono break-words">${detalhes}</div>` : '<div class="feed-item-detalhes mt-0.5 text-[10px] opacity-75 font-mono break-words hidden"></div>'}
+      </div>
+    `;
+
+    loadingFeed.appendChild(item);
+    if (window.lucide) lucide.createIcons();
+    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return item;
+  }
+
+  function atualizarCardTentativa(card, { tipo, mensagem, detalhes = '' }) {
+    if (!card) return;
+
+    let icone = 'x-circle';
+    let classesCard = 'bg-red-50/80 border-red-200 text-red-900';
+    let corIcone = 'text-red-600';
+
+    if (tipo === 'sucesso') {
+      icone = 'check-circle-2';
+      classesCard = 'bg-emerald-50 border-emerald-200 text-emerald-900 font-semibold';
+      corIcone = 'text-emerald-600';
+    } else if (tipo === 'aviso' || tipo === 'erro') {
+      icone = 'x-circle';
+      classesCard = 'bg-red-50/80 border-red-200 text-red-900';
+      corIcone = 'text-red-600';
+    }
+
+    // Remove classes de outros estados e aplica o novo tema
+    card.classList.remove(
+      'bg-blue-50/70', 'border-blue-200', 'text-blue-900', 'font-medium',
+      'bg-amber-50/90', 'border-amber-200', 'text-amber-900',
+      'bg-emerald-50', 'border-emerald-200', 'text-emerald-900', 'font-semibold',
+      'bg-red-50/80', 'border-red-200', 'text-red-900'
+    );
+    card.className = `flex items-start gap-2.5 p-2.5 rounded-xl text-xs transition-all border ${classesCard}`;
+
+    // Substitui o ícone com animate-spin pelo ícone de resultado estático
+    const iconEl = card.querySelector('svg, i');
+    if (iconEl) {
+      iconEl.outerHTML = `<i data-lucide="${icone}" class="w-4 h-4 mt-0.5 flex-shrink-0 ${corIcone}"></i>`;
+    }
+
+    // Atualiza o texto do título
+    const tituloEl = card.querySelector('.feed-item-titulo') || card.querySelector('.flex-1 > div');
+    if (tituloEl && mensagem) {
+      tituloEl.textContent = mensagem;
+    }
+
+    // Atualiza os detalhes
+    let detalhesEl = card.querySelector('.feed-item-detalhes');
+    if (!detalhesEl && detalhes) {
+      detalhesEl = document.createElement('div');
+      detalhesEl.className = 'feed-item-detalhes mt-0.5 text-[10px] opacity-75 font-mono break-words';
+      const containerTexto = card.querySelector('.flex-1');
+      if (containerTexto) containerTexto.appendChild(detalhesEl);
+    }
+    if (detalhesEl) {
+      if (detalhes) {
+        detalhesEl.textContent = detalhes;
+        detalhesEl.classList.remove('hidden');
+      } else {
+        detalhesEl.textContent = '';
+        detalhesEl.classList.add('hidden');
+      }
+    }
+
+    if (window.lucide) lucide.createIcons();
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function processarEventoStream(evento, inicio) {
+    if (evento.tipo === 'info') {
+      if (loadingEtapa) loadingEtapa.textContent = evento.mensagem;
+      adicionarItemFeed('info', evento.mensagem);
+
+    } else if (evento.tipo === 'tentativa') {
+      if (loadingEtapa) loadingEtapa.textContent = `Processando com ${evento.modelo}...`;
+      const card = adicionarItemFeed('tentativa', evento.mensagem);
+      cardTentativaAtual = card;
+      if (evento.modelo) {
+        cardTentativasPorModelo.set(evento.modelo, card);
+      }
+
+    } else if (evento.tipo === 'aviso') {
+      // Falha na tentativa atual: atualiza o card giratório para x-circle vermelho
+      if (loadingEtapa) loadingEtapa.textContent = `Aviso em ${evento.modelo}: alternando modelo...`;
+      const card = (evento.modelo && cardTentativasPorModelo.get(evento.modelo)) || cardTentativaAtual;
+      if (card) {
+        atualizarCardTentativa(card, {
+          tipo: 'aviso',
+          mensagem: evento.mensagem,
+          detalhes: evento.detalhes
+        });
+        if (cardTentativaAtual === card) {
+          cardTentativaAtual = null;
+        }
+      } else {
+        adicionarItemFeed('erro', evento.mensagem, evento.detalhes);
+      }
+
+    } else if (evento.tipo === 'sucesso') {
+      // Sucesso na tentativa atual: atualiza o card para check-circle-2 verde
+      const card = (evento.modelo && cardTentativasPorModelo.get(evento.modelo)) || cardTentativaAtual;
+      if (card) {
+        atualizarCardTentativa(card, {
+          tipo: 'sucesso',
+          mensagem: evento.mensagem
+        });
+      } else {
+        adicionarItemFeed('sucesso', evento.mensagem);
+      }
+
+      if (loadingEtapa) loadingEtapa.textContent = 'Extração finalizada com sucesso!';
+
+      // Pausa breve (~700ms) para exibir o feedback de sucesso no feed antes de mostrar os dados
+      await new Promise(resolve => setTimeout(resolve, 700));
+
+      pararCronometro();
+      const tempoTotal = ((Date.now() - inicio) / 1000).toFixed(1).replace('.', ',');
+      
+      const dados = evento.dados;
+      ultimoJsonExtraido = dados;
+      renderizarResultados(dados);
+
+      badgeTempoTexto.textContent = `Extraído em ${tempoTotal}s via ${evento.modelo}`;
+      badgeTempo.classList.remove('hidden');
+
+      ativarAba('json');
+      loadingIndicator.classList.add('hidden');
+      resultsSection.classList.remove('hidden');
+      resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // Análise automática no banco de dados
+      lancamentoSucesso.classList.add('hidden');
+      notaLancada = false;
+      analisarNota();
+
+    } else if (evento.tipo === 'erro') {
+      pararCronometro();
+      const card = (evento.modelo && cardTentativasPorModelo.get(evento.modelo)) || cardTentativaAtual;
+      if (card) {
+        atualizarCardTentativa(card, {
+          tipo: 'erro',
+          mensagem: evento.mensagem,
+          detalhes: evento.detalhes
+        });
+        cardTentativaAtual = null;
+      } else {
+        adicionarItemFeed('erro', evento.mensagem, evento.detalhes);
+      }
+      exibirErroExtracao(evento.detalhes || evento.mensagem);
+    }
   }
 
   function ocultarErro() {

@@ -1,12 +1,43 @@
+import asyncio
 import json
 import logging
 import re
-from typing import Optional
+import time
+from typing import AsyncGenerator, Dict, List, Optional, Any
+
+from google import genai
+from google.genai import errors, types
+from pydantic import Field
 
 from app.config import settings
-from app.schemas.invoice import ExtracaoNotaFiscalResponse
+from app.schemas.invoice import (
+    CategoriaDespesaEnum,
+    ClassificacaoDespesaSchema,
+    ExtracaoNotaFiscalResponse,
+)
 
 logger = logging.getLogger(__name__)
+
+# Ordem de tentativa: em 503/429/timeout passa para o próximo modelo (flash antes de flash-lite)
+MODELOS = [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+]
+TIMEOUT_MS = 60_000  # limite por tentativa
+PAUSA_503_S = 1.5  # pausa curta antes do próximo modelo quando há pico de demanda (503)
+
+
+# Schema enviado ao Gemini: igual ao da API, mas com a categoria restrita ao enum
+class _ClassificacaoGemini(ClassificacaoDespesaSchema):
+    categoria: CategoriaDespesaEnum
+
+
+class _ExtracaoGemini(ExtracaoNotaFiscalResponse):
+    classificacoes_despesa: List[_ClassificacaoGemini] = Field(default_factory=list)
+
 
 SYSTEM_PROMPT = """
 Você é um especialista contábil e tributário com profundo conhecimento no Agronegócio brasileiro.
@@ -29,7 +60,7 @@ ATENÇÃO ÀS REGRAS DE EXTRAÇÃO:
    - valor_total: Valor total da nota fiscal (numérico float, ex: 1540.50).
    - quantidade_parcelas: Número de parcelas informadas no campo de cobrança/fatura (se não especificado, assuma 1).
    - data_vencimento: Data de vencimento principal ou da primeira parcela no formato AAAA-MM-DD (se não constar vencimento, use a data de emissão).
-   - parcelas: Lista de parcelas contendo {"numero": 1, "data_vencimento": "AAAA-MM-DD", "valor": float}.
+   - parcelas: Lista de parcelas contendo numero, data_vencimento (AAAA-MM-DD) e valor (float).
 
 4. CLASSIFICAÇÃO DA DESPESA (Regra Crítica):
 A despesa NÃO é um campo explícito da nota fiscal. Você DEVE interpretar a descrição dos produtos/serviços e classificá-la obrigatoriamente em UMA das seguintes Categorias Principais do Agronegócio:
@@ -49,40 +80,18 @@ Para cada classificação atribuída, forneça:
 - "subcategoria_sugerida": Ex: "Combustíveis e Lubrificantes", "Defensivos Agrícolas", etc.
 - "justificativa": Explicação concisa relacionando o produto faturado com a categoria.
 
-ESTRUTURA DO JSON DE RESPOSTA OBRIGATÓRIA:
-Retorne APENAS um objeto JSON válido correspondente à estrutura abaixo, sem markdown, sem tags ```json ou texto extra:
-{
-  "fornecedor": {
-    "razao_social": "string ou null",
-    "nome_fantasia": "string ou null",
-    "cnpj": "string ou null"
-  },
-  "faturado": {
-    "nome_completo": "string ou null",
-    "cpf": "string ou null"
-  },
-  "numero_nota_fiscal": "string ou null",
-  "data_emissao": "AAAA-MM-DD ou null",
-  "descricao_produtos": "string",
-  "quantidade_parcelas": 1,
-  "data_vencimento": "AAAA-MM-DD ou null",
-  "valor_total": 0.0,
-  "parcelas": [
-    {
-      "numero": 1,
-      "data_vencimento": "AAAA-MM-DD ou null",
-      "valor": 0.0
-    }
-  ],
-  "classificacoes_despesa": [
-    {
-      "categoria": "NOME DA CATEGORIA",
-      "subcategoria_sugerida": "string",
-      "justificativa": "string"
-    }
-  ]
-}
+Campos ausentes no documento devem ser retornados como null.
 """
+
+# Configuração fixa da chamada (o formato do JSON é garantido pelo response_schema)
+_CONFIG = types.GenerateContentConfig(
+    system_instruction=SYSTEM_PROMPT,
+    response_mime_type="application/json",
+    response_schema=_ExtracaoGemini,
+    temperature=0.1,
+    # Sem tools: desativa o AFC (remove o aviso do SDK no terminal)
+    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+)
 
 
 def _redigir_chave(texto: str, chave: Optional[str] = None) -> str:
@@ -96,203 +105,129 @@ def _redigir_chave(texto: str, chave: Optional[str] = None) -> str:
     return texto
 
 
-def _limpar_resposta_json(texto: str) -> str:
-    """Remove eventuais marcações de bloco de código markdown ```json ... ```"""
-    texto = texto.strip()
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", texto)
-    if match:
-        return match.group(1).strip()
-    return texto
-
-
-def _chamar_gemini_novo_sdk(pdf_bytes: bytes, api_key: str) -> str:
-    """Chama a API do Gemini utilizando o SDK moderno 'google-genai' com a chave volátil fornecida."""
-    import time
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-    
-    # Modelos prioritários ativos na API do Google
-    modelos_candidatos = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-pro",
-        "gemini-3.5-pro",
-    ]
-
-    # Descoberta dinâmica de modelos adicionais disponíveis para a chave do usuário
-    try:
-        for m in client.models.list():
-            nome_modelo = (getattr(m, "name", None) or "").replace("models/", "").strip()
-            if "gemini" in nome_modelo.lower() and nome_modelo not in modelos_candidatos:
-                # Ignora modelos incompatíveis ou descontinuados
-                if not any(ign in nome_modelo.lower() for ign in ["embed", "imagen", "aqa", "2.0", "2.5", "1.5"]):
-                    modelos_candidatos.append(nome_modelo)
-    except Exception as e_list:
-        logger.debug(f"Listagem dinâmica de modelos ignorada: {e_list}")
-
-    erros = []
-
-    for modelo in modelos_candidatos:
-        logger.info(f"Tentando extração com modelo {modelo}...")
-
-        # Até 2 tentativas por modelo com espera em caso de 503 (pico temporário)
-        for tentativa in range(1, 3):
-            try:
-                # Tentativa 1: modo estruturado JSON
-                response = client.models.generate_content(
-                    model=modelo,
-                    contents=[
-                        types.Part.from_bytes(
-                            data=pdf_bytes,
-                            mime_type="application/pdf"
-                        ),
-                        "Extraia todos os campos da nota fiscal em anexo e retorne o JSON estruturado conforme as instruções."
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_PROMPT,
-                        response_mime_type="application/json",
-                        temperature=0.1
-                    )
-                )
-                if response and response.text:
-                    logger.info(f"Sucesso na extração com {modelo}!")
-                    return response.text
-            except Exception as e1:
-                msg_e1 = _redigir_chave(str(e1), api_key)
-                
-                # Se o modelo não existe (404), passa imediatamente para o próximo
-                if "404" in msg_e1 or "NOT_FOUND" in msg_e1:
-                    erros.append(f"{modelo}: não encontrado")
-                    break
-
-                # Se for 503 (servidor temporariamente sobrecarregado), aguarda com backoff
-                if "503" in msg_e1 or "UNAVAILABLE" in msg_e1:
-                    logger.warning(f"503 (alta demanda) com {modelo} na tentativa {tentativa}. Aguardando {tentativa * 2}s...")
-                    time.sleep(tentativa * 2)
-                    if tentativa == 1:
-                        continue  # Tenta novamente o mesmo modelo após a pausa
-
-                # Tentativa 2: fallback de prompt simples
-                try:
-                    response = client.models.generate_content(
-                        model=modelo,
-                        contents=[
-                            types.Part.from_bytes(
-                                data=pdf_bytes,
-                                mime_type="application/pdf"
-                            ),
-                            f"{SYSTEM_PROMPT}\n\nAnalise o arquivo PDF acima e retorne o JSON solicitado."
-                        ]
-                    )
-                    if response and response.text:
-                        logger.info(f"Sucesso com fallback no modelo {modelo}!")
-                        return response.text
-                except Exception as e2:
-                    msg_e2 = _redigir_chave(str(e2), api_key)
-                    erros.append(f"{modelo}: {msg_e2}")
-                    break
-
-    raise RuntimeError(f"Erro ao processar PDF via Gemini (tentados: {', '.join(modelos_candidatos)}): {' ; '.join(erros)}")
-
-
-def _chamar_gemini_sdk_legado(pdf_bytes: bytes, api_key: str) -> str:
-    """Fallback utilizando o SDK 'google-generativeai' se instalado."""
-    import google.generativeai as genai
-
-    genai.configure(api_key=api_key)
-    
-    modelos_candidatos = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-pro",
-        "gemini-3.5-pro"
-    ]
-    ultimo_erro = None
-
-    for modelo in modelos_candidatos:
-        try:
-            logger.info(f"Tentando com modelo legado {modelo}...")
-            model = genai.GenerativeModel(
-                model_name=modelo,
-                generation_config={"response_mime_type": "application/json", "temperature": 0.1}
-            )
-            response = model.generate_content([
-                {"mime_type": "application/pdf", "data": pdf_bytes},
-                SYSTEM_PROMPT
-            ])
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            msg_e = _redigir_chave(str(e), api_key)
-            logger.warning(f"Falha com modelo legado {modelo}: {msg_e}")
-            ultimo_erro = msg_e
-
-    raise RuntimeError(f"Erro ao processar PDF via SDK alternativo: {ultimo_erro}")
-
-
-def extrair_dados_nota_fiscal(
+async def extrair_dados_nota_fiscal_stream(
     pdf_bytes: bytes,
-    api_key: Optional[str] = None,
-    filename: str = "nota_fiscal.pdf"
-) -> ExtracaoNotaFiscalResponse:
+    api_key: Optional[str] = None
+) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Envia o arquivo PDF da nota fiscal para a API do Google Gemini,
-    utilizando a chave volátil fornecida pelo usuário, obtém os campos
-    obrigatórios e a classificação inteligente da despesa.
+    Executa a extração da nota fiscal enviando eventos em tempo real para cada tentativa,
+    aviso de 503/alta demanda, e resultado final estruturado.
     """
-    # Determina a chave (prioriza a chave informada pelo usuário)
     chave_efetiva = (api_key or "").strip() or settings.GEMINI_API_KEY
     if not chave_efetiva:
-        raise ValueError(
-            "Chave de API do Gemini não informada. Por favor, insira sua chave da API do Gemini para continuar."
-        )
+        yield {
+            "tipo": "erro",
+            "mensagem": "Chave de API do Gemini não informada. Insira sua chave para continuar."
+        }
+        return
 
     if not pdf_bytes or len(pdf_bytes) == 0:
-        raise ValueError("O arquivo PDF enviado está vazio.")
+        yield {
+            "tipo": "erro",
+            "mensagem": "O arquivo PDF enviado está vazio."
+        }
+        return
 
-    raw_response_text: Optional[str] = None
+    client = genai.Client(api_key=chave_efetiva, http_options=types.HttpOptions(timeout=TIMEOUT_MS))
+    conteudo = [
+        types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+        "Extraia todos os campos da nota fiscal em anexo.",
+    ]
     erros = []
 
-    # 1. Tenta utilizar google-genai (SDK oficial moderno)
-    try:
-        raw_response_text = _chamar_gemini_novo_sdk(pdf_bytes, chave_efetiva)
-    except ImportError:
-        logger.info("google-genai não encontrado. Tentando SDK alternativo...")
-    except Exception as e:
-        erros.append(_redigir_chave(str(e), chave_efetiva))
+    yield {
+        "tipo": "info",
+        "mensagem": "Arquivo PDF preparado. Iniciando conexão com a IA..."
+    }
 
-    # 2. Se não conseguiu e google-generativeai estiver disponível, tenta com ele
-    if not raw_response_text:
+    for modelo in MODELOS:
+        config = _CONFIG
+        if modelo.startswith("gemini-3"):
+            config = _CONFIG.model_copy(update={
+                "thinking_config": types.ThinkingConfig(thinking_level=types.ThinkingLevel.MEDIUM)
+            })
+
+        yield {
+            "tipo": "tentativa",
+            "modelo": modelo,
+            "mensagem": f"Consultando modelo {modelo}..."
+        }
+
         try:
-            raw_response_text = _chamar_gemini_sdk_legado(pdf_bytes, chave_efetiva)
-        except ImportError:
-            pass
-        except Exception as e:
-            erros.append(_redigir_chave(str(e), chave_efetiva))
+            # Executa a chamada em thread separada para não travar o loop assíncrono
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model=modelo,
+                contents=conteudo,
+                config=config
+            )
 
-    if not raw_response_text:
-        msg_erro = " | ".join(erros) if erros else "Falha desconhecida na comunicação com a API do Gemini."
-        raise RuntimeError(f"Não foi possível processar a nota fiscal: {msg_erro}")
+            if response and response.text:
+                try:
+                    dados_dict = json.loads(response.text)
+                    if not dados_dict.get("parcelas") and dados_dict.get("data_vencimento"):
+                        dados_dict["parcelas"] = [
+                            {
+                                "numero": 1,
+                                "data_vencimento": dados_dict.get("data_vencimento"),
+                                "valor": dados_dict.get("valor_total")
+                            }
+                        ]
+                    resultado = ExtracaoNotaFiscalResponse(**dados_dict)
+                    yield {
+                        "tipo": "sucesso",
+                        "modelo": modelo,
+                        "mensagem": f"Extração concluída com sucesso via {modelo}!",
+                        "dados": resultado.model_dump()
+                    }
+                    return
+                except Exception as e_parse:
+                    logger.error(f"Erro ao processar JSON retornado por {modelo}: {e_parse}")
+                    erros.append(f"{modelo}: JSON inválido retornado")
+            else:
+                erros.append(f"{modelo}: resposta vazia")
 
-    # Parse e validação do JSON retornado
-    cleaned_json = _limpar_resposta_json(raw_response_text)
-    try:
-        dados_dict = json.loads(cleaned_json)
-    except json.JSONDecodeError as err:
-        logger.error(f"Erro ao decodificar JSON do Gemini: {cleaned_json}")
-        raise ValueError("A resposta da IA não pôde ser convertida em um JSON válido. Tente novamente.")
-
-    # Garante consistência de campos
-    if not dados_dict.get("parcelas") and dados_dict.get("data_vencimento"):
-        dados_dict["parcelas"] = [
-            {
-                "numero": 1,
-                "data_vencimento": dados_dict.get("data_vencimento"),
-                "valor": dados_dict.get("valor_total")
+        except errors.ClientError as e:
+            msg_e = _redigir_chave(str(e), chave_efetiva)
+            # Chave inválida / sem permissão: aborta imediatamente
+            if e.code in (401, 403) or (e.code == 400 and "API key" in msg_e):
+                yield {
+                    "tipo": "erro",
+                    "modelo": modelo,
+                    "mensagem": "Chave de API do Gemini inválida ou sem permissão. Verifique sua chave.",
+                    "detalhes": msg_e
+                }
+                return
+            erros.append(f"{modelo}: {msg_e}")
+            yield {
+                "tipo": "aviso",
+                "modelo": modelo,
+                "mensagem": f"{modelo}: Não disponível ({e.code}). Alternando modelo...",
+                "detalhes": msg_e
             }
-        ]
 
-    # Validação rigorosa através do Pydantic
-    return ExtracaoNotaFiscalResponse(**dados_dict)
+        except Exception as e:
+            msg_e = _redigir_chave(str(e), chave_efetiva)
+            erros.append(f"{modelo}: {msg_e}")
+            if "503" in msg_e or "UNAVAILABLE" in msg_e:
+                yield {
+                    "tipo": "aviso",
+                    "modelo": modelo,
+                    "mensagem": f"{modelo}: Servidores com alta demanda (503). Aguardando {PAUSA_503_S}s e tentando próximo modelo...",
+                    "detalhes": msg_e
+                }
+                await asyncio.sleep(PAUSA_503_S)
+            else:
+                yield {
+                    "tipo": "aviso",
+                    "modelo": modelo,
+                    "mensagem": f"{modelo}: Falha temporária ({msg_e[:60]}...). Alternando...",
+                    "detalhes": msg_e
+                }
+
+    yield {
+        "tipo": "erro",
+        "mensagem": "Não foi possível processar a nota fiscal com nenhum dos modelos disponíveis no momento.",
+        "detalhes": " ; ".join(erros)
+    }
+

@@ -1,54 +1,7 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Extração de Dados de Nota Fiscal - Sistema Rural</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons CDN -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- CSS Customizado -->
-  <link rel="stylesheet" href="/static/css/custom.css">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#f0fdf4',
-              100: '#dcfce7',
-              500: '#22c55e',
-              600: '#16a34a',
-              700: '#15803d',
-              800: '#166534',
-              900: '#14532d',
-            }
-          }
-        }
-      }
-    }
-  </script>
-</head>
-<body class="bg-[#f8fafc] text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+{% extends "base.html" %}
+{% block titulo %}Extração de Dados de Nota Fiscal{% endblock %}
 
-  <!-- Barra Superior de Navegação -->
-  <nav class="bg-white border-b border-slate-200/80 sticky top-0 z-30 shadow-xs">
-    <div class="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-      
-      <!-- Marca / Logo -->
-      <div class="flex items-center space-x-2.5">
-        <div class="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-          <i data-lucide="sprout" class="w-4.5 h-4.5"></i>
-        </div>
-        <div>
-          <span class="text-sm font-bold text-slate-900 block leading-tight">Gestão Rural</span>
-          <span class="text-[10px] text-slate-500 font-medium">Contas a Pagar</span>
-        </div>
-      </div>
-
-      <!-- Controles: Status da Chave, Usuário e Logout -->
-      <div class="flex items-center gap-2 sm:gap-3">
+{% block nav_extra %}
         <!-- Botão / Status da Chave do Gemini -->
         <button 
           id="btn-status-chave" 
@@ -60,28 +13,9 @@
           <span id="label-status-chave">Configurar Chave Gemini</span>
           <i data-lucide="key" class="w-3.5 h-3.5 opacity-70"></i>
         </button>
+{% endblock %}
 
-        <!-- Informação do Usuário -->
-        <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-600 font-medium bg-slate-100 rounded-lg">
-          <i data-lucide="user" class="w-3.5 h-3.5 text-slate-400"></i>
-          <span>{{ usuario }}</span>
-        </div>
-
-        <!-- Botão Logout -->
-        <button 
-          id="btn-logout" 
-          type="button" 
-          class="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-          title="Sair do sistema"
-        >
-          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-          <span class="hidden sm:inline">Sair</span>
-        </button>
-      </div>
-
-    </div>
-  </nav>
-
+{% block corpo %}
   <!-- Cabeçalho da Página -->
   <header class="text-center pt-8 pb-5 px-4">
     <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Extração de Dados de Nota Fiscal</h1>
@@ -143,17 +77,31 @@
 
     </section>
 
-    <!-- Indicador de Carregamento / Processamento -->
-    <div id="loading-indicator" class="hidden bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-sm">
-      <div class="inline-flex items-center justify-center w-12 h-12 bg-slate-100 text-slate-800 rounded-full mb-3 animate-pulse">
-        <i data-lucide="cpu" class="w-6 h-6"></i>
+    <!-- Indicador de Carregamento / Processamento com Streaming Real -->
+    <div id="loading-indicator" class="hidden bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-3">
+          <div class="inline-flex items-center justify-center w-10 h-10 bg-emerald-50 text-emerald-700 rounded-xl">
+            <i data-lucide="sparkles" class="w-5 h-5 animate-pulse"></i>
+          </div>
+          <div>
+            <h3 id="loading-etapa" class="text-sm font-bold text-slate-900">Iniciando extração com IA...</h3>
+            <p class="text-xs text-slate-500">Acompanhamento das tentativas e resposta em tempo real</p>
+          </div>
+        </div>
+        <span class="inline-flex items-center gap-1.5 font-mono text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg">
+          <i data-lucide="timer" class="w-3.5 h-3.5"></i> <span id="loading-segundos">0,0s</span>
+        </span>
       </div>
-      <h3 class="text-sm font-bold text-slate-900">Processando e Extraindo Dados com IA...</h3>
-      <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-        Analisando o documento e classificando as despesas no agronegócio.
-      </p>
-      <div class="w-40 h-1.5 bg-slate-100 rounded-full mx-auto mt-4 overflow-hidden">
+
+      <!-- Barra de pulso suave -->
+      <div class="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
         <div class="w-full h-full bg-slate-800 rounded-full animate-soft-pulse"></div>
+      </div>
+
+      <!-- Feed / Histórico de Eventos em Tempo Real -->
+      <div class="space-y-2 pt-1" id="loading-feed">
+        <!-- Itens inseridos dinamicamente em tempo real -->
       </div>
     </div>
 
@@ -164,6 +112,13 @@
         <div>
           <h3 class="text-sm font-semibold text-red-800">Falha no Processamento</h3>
           <p id="error-message" class="text-xs text-red-700 mt-1">Ocorreu um erro ao processar a nota fiscal.</p>
+          <details id="error-detalhes" class="hidden mt-2">
+            <summary class="text-xs text-red-600 cursor-pointer select-none">Ver detalhes</summary>
+            <pre id="error-detalhes-texto" class="mt-1 text-[11px] text-red-700/80 whitespace-pre-wrap break-words"></pre>
+          </details>
+          <button id="btn-tentar-novamente" type="button" class="hidden mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-red-700 bg-white border border-red-200 hover:bg-red-100 rounded-lg px-3 py-1.5">
+            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> Tentar novamente
+          </button>
         </div>
       </div>
     </div>
@@ -172,7 +127,12 @@
     <section id="results-section" class="hidden bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5">
       
       <!-- Título do Card -->
-      <h2 class="text-sm font-bold text-slate-900 tracking-tight">Dados Extraídos</h2>
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900 tracking-tight">Dados Extraídos</h2>
+        <span id="badge-tempo" class="hidden inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+          <i data-lucide="timer" class="w-3 h-3"></i><span id="badge-tempo-texto"></span>
+        </span>
+      </div>
 
       <!-- Alternador de Abas (Tabs) -->
       <div class="bg-[#eceef2] p-1 rounded-xl flex items-center">
@@ -327,7 +287,52 @@
 
     </section>
 
+    <!-- Card 3: Análise no Banco de Dados e Lançamento (2ª Etapa) -->
+    <section id="analise-section" class="hidden bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+          <i data-lucide="database" class="w-4 h-4 text-slate-700"></i>
+          Análise no Banco de Dados
+        </h2>
+        <button id="btn-reanalisar" type="button" class="text-[11px] font-semibold text-slate-500 hover:text-slate-800 inline-flex items-center gap-1">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i> Consultar novamente
+        </button>
+      </div>
+
+      <div id="analise-carregando" class="hidden text-xs text-slate-500">Consultando o banco de dados...</div>
+
+      <!-- Resultado da consulta: FORNECEDOR / FATURADO / DESPESA -->
+      <div id="analise-resultado" class="border border-slate-200 rounded-xl p-5 space-y-5 text-sm"></div>
+
+      <div id="analise-aviso" class="hidden bg-amber-50 border-l-4 border-amber-500 p-3.5 rounded-r-xl text-xs text-amber-800"></div>
+
+      <button id="btn-lancar" type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <i data-lucide="send" class="w-4 h-4"></i>
+        <span>LANÇAR CONTA A PAGAR</span>
+      </button>
+
+      <div id="lancamento-sucesso" class="hidden bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-xl shadow-sm"></div>
+    </section>
+
   </main>
+
+  {% if commit_hash %}
+  <!-- Rodapé com Badge do Commit para Avaliação -->
+  <footer class="pb-8 pt-2 text-center">
+    <a 
+      href="{{ commit_url }}" 
+      target="_blank" 
+      rel="noopener noreferrer"
+      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200/90 text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50 transition shadow-xs text-xs font-mono group"
+      title="Ver commit no GitHub (abre em nova aba)"
+    >
+      <i data-lucide="git-commit" class="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition"></i>
+      <span class="font-sans text-[11px] font-medium text-slate-500">Commit:</span>
+      <span class="font-semibold text-slate-800">{{ commit_hash }}</span>
+      <i data-lucide="external-link" class="w-3 h-3 text-slate-400 opacity-60 group-hover:opacity-100 transition"></i>
+    </a>
+  </footer>
+  {% endif %}
 
   <!-- ============================================================== -->
   <!-- MODAL: Inserção Segura da Chave da API do Gemini              -->
@@ -421,12 +426,9 @@
 
     </div>
   </div>
+{% endblock %}
 
+{% block scripts %}
   <!-- Script JS da aplicação -->
-  <script src="/static/js/app.js"></script>
-  <script>
-    // Inicializa ícones Lucide
-    if (window.lucide) lucide.createIcons();
-  </script>
-</body>
-</html>
+  <script src="/static/js/app.js?v=20261026_stream"></script>
+{% endblock %}

@@ -61,7 +61,7 @@ def obter_pessoa(id_: int, db: Session = Depends(get_db)):
 def criar_pessoa(dados: PessoaIn, db: Session = Depends(get_db)):
     repo = PessoaRepository(db)
     if repo.documento_em_uso(dados.documento, dados.tipo):
-        raise RegraNegocioError(f"Já existe um {dados.tipo.lower()} com este documento.", 409)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Já existe um {dados.tipo.lower()} com este documento.")
     pessoa = repo.adicionar(Pessoa(**dados.model_dump(), status=STATUS_ATIVO))
     db.commit()
     return pessoa
@@ -72,7 +72,7 @@ def atualizar_pessoa(id_: int, dados: PessoaIn, db: Session = Depends(get_db)):
     repo = PessoaRepository(db)
     pessoa = _ou_404(repo.obter(id_), "Pessoa")
     if repo.documento_em_uso(dados.documento, dados.tipo, ignorar_id=id_):
-        raise RegraNegocioError(f"Já existe um {dados.tipo.lower()} com este documento.", 409)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Já existe um {dados.tipo.lower()} com este documento.")
     for campo, valor in dados.model_dump().items():
         setattr(pessoa, campo, valor)
     db.commit()
@@ -117,7 +117,7 @@ def obter_classificacao(id_: int, db: Session = Depends(get_db)):
 def criar_classificacao(dados: ClassificacaoIn, db: Session = Depends(get_db)):
     repo = ClassificacaoRepository(db)
     if repo.buscar_por_descricao(dados.descricao, dados.tipo):
-        raise RegraNegocioError(f"Já existe um tipo de {dados.tipo.lower()} com esta descrição.", 409)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Já existe um tipo de {dados.tipo.lower()} com esta descrição.")
     classificacao = repo.adicionar(Classificacao(**dados.model_dump(), status=STATUS_ATIVO))
     db.commit()
     return classificacao
@@ -129,7 +129,7 @@ def atualizar_classificacao(id_: int, dados: ClassificacaoIn, db: Session = Depe
     classificacao = _ou_404(repo.obter(id_), "Classificação")
     existente = repo.buscar_por_descricao(dados.descricao, dados.tipo)
     if existente and existente.id != id_:
-        raise RegraNegocioError(f"Já existe um tipo de {dados.tipo.lower()} com esta descrição.", 409)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Já existe um tipo de {dados.tipo.lower()} com esta descrição.")
     classificacao.tipo = dados.tipo
     classificacao.descricao = dados.descricao
     db.commit()

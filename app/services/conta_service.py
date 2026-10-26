@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.models import STATUS_ATIVO, STATUS_INATIVO, MovimentoContas, ParcelaContas
 from app.repositories import ClassificacaoRepository, MovimentoRepository, PessoaRepository
 from app.schemas.cadastros import ContaIn
-from app.services.erros import RegraNegocioError
+from fastapi import HTTPException
 
 # Qual tipo de pessoa e de classificação cada tipo de movimento aceita
 PESSOA_POR_MOVIMENTO = {"APAGAR": "FORNECEDOR", "ARECEBER": "CLIENTE"}
@@ -30,7 +30,7 @@ def renumerar_parcelas(parcelas: List[ParcelaContas]) -> None:
 def nova_parcela(data_vencimento: Optional[date], valor, valor_pago=0) -> ParcelaContas:
     valor, pago = _dinheiro(valor), _dinheiro(valor_pago)
     if pago > valor:
-        raise RegraNegocioError("O valor pago não pode ser maior que o valor da parcela.")
+        raise HTTPException(status_code=400, detail="O valor pago não pode ser maior que o valor da parcela.")
     return ParcelaContas(
         identificacao="ÚNICA",
         data_vencimento=data_vencimento,
@@ -51,12 +51,12 @@ def salvar_conta(db: Session, dados: ContaIn, movimento: Optional[MovimentoConta
     tipo_pessoa = PESSOA_POR_MOVIMENTO[dados.tipo]
     pessoa = pessoas.obter(dados.pessoa_id)
     if not pessoa or pessoa.tipo != tipo_pessoa or pessoa.status != STATUS_ATIVO:
-        raise RegraNegocioError(f"Selecione um {tipo_pessoa.lower()} ATIVO.")
+        raise HTTPException(status_code=400, detail=f"Selecione um {tipo_pessoa.lower()} ATIVO.")
 
     if dados.faturado_id is not None:
         faturado = pessoas.obter(dados.faturado_id)
         if not faturado or faturado.tipo != "FATURADO" or faturado.status != STATUS_ATIVO:
-            raise RegraNegocioError("Selecione um faturado ATIVO.")
+            raise HTTPException(status_code=400, detail="Selecione um faturado ATIVO.")
 
     # --- Classificações (uma ou mais) ---
     tipo_classificacao = CLASSIFICACAO_POR_MOVIMENTO[dados.tipo]
@@ -65,15 +65,12 @@ def salvar_conta(db: Session, dados: ContaIn, movimento: Optional[MovimentoConta
     if len(classificacoes) != len(ids) or any(
         c.tipo != tipo_classificacao or c.status != STATUS_ATIVO for c in classificacoes
     ):
-        raise RegraNegocioError(f"Selecione apenas tipos de {tipo_classificacao.lower()} ATIVOS.")
+        raise HTTPException(status_code=400, detail=f"Selecione apenas tipos de {tipo_classificacao.lower()} ATIVOS.")
 
     # --- Duplicidade ---
     duplicado = movimentos.buscar_duplicado(dados.tipo, dados.numero_nota_fiscal, pessoa.id)
     if duplicado and (movimento is None or duplicado.id != movimento.id):
-        raise RegraNegocioError(
-            f"Já existe um lançamento ativo com a nota {dados.numero_nota_fiscal} para esta pessoa (ID {duplicado.id}).",
-            status_code=409,
-        )
+        raise HTTPException(status_code=409, detail=f"Já existe um lançamento ativo com a nota {dados.numero_nota_fiscal} para esta pessoa (ID {duplicado.id}).")
 
     if movimento is None:
         movimento = MovimentoContas(status=STATUS_ATIVO)
@@ -95,7 +92,7 @@ def salvar_conta(db: Session, dados: ContaIn, movimento: Optional[MovimentoConta
         if item.id is not None:
             parcela = existentes.get(item.id)
             if parcela is None:
-                raise RegraNegocioError(f"Parcela {item.id} não pertence a este registro.")
+                raise HTTPException(status_code=400, detail=f"Parcela {item.id} não pertence a este registro.")
             atualizada = nova_parcela(item.data_vencimento, item.valor_parcela, item.valor_pago)
             parcela.data_vencimento = atualizada.data_vencimento
             parcela.valor_parcela = atualizada.valor_parcela

@@ -1,4 +1,3 @@
-import re
 from datetime import date
 from typing import List, Literal, Optional
 
@@ -11,10 +10,7 @@ TipoMovimento = Literal["APAGAR", "ARECEBER"]
 
 def somente_digitos(valor: Optional[str]) -> Optional[str]:
     """Remove pontuação de CPF/CNPJ. Retorna None se não sobrar nenhum dígito."""
-    if not valor:
-        return None
-    digitos = re.sub(r"\D", "", valor)
-    return digitos or None
+    return "".join(filter(str.isdigit, valor or "")) or None
 
 
 # -------------------------------------------------------------

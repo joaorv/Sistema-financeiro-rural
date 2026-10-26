@@ -1,7 +1,7 @@
 /**
  * Listagem genérica dos cadastros, conforme a recomendação de layout:
  *  - tabela começa vazia;
- *  - dados carregados pela Busca ou pelo botão TODOS (TODOS = somente ATIVOS);
+ *  - dados carregados pela Busca ou pelo botão TODOS (respeitando os filtros de tipo e situação);
  *  - ordenação ao clicar no cabeçalho de cada coluna;
  *  - busca por mais de um elemento (texto em vários campos + tipo + situação);
  *  - ações Editar / Excluir (lógico -> INATIVO) e Reativar para os inativos.
@@ -115,11 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-buscar').addEventListener('click', () => carregar(filtroAtual()));
   inputBusca.addEventListener('keydown', (e) => { if (e.key === 'Enter') carregar(filtroAtual()); });
 
-  // TODOS: limpa os filtros e carrega somente os registros ATIVOS
+  // TODOS: limpa o texto de busca e carrega todos os registros com os filtros atuais
   document.getElementById('btn-todos').addEventListener('click', () => {
     inputBusca.value = '';
-    if (selectTipo && !selectTipo.dataset.fixo) selectTipo.value = '';
-    selectStatus.value = 'ATIVO';
     carregar(filtroAtual());
   });
 

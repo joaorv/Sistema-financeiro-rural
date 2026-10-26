@@ -5,7 +5,6 @@ Fluxo:
   1. analisar_nota()  -> consulta no banco se FORNECEDOR, FATURADO e DESPESA(s) existem
   2. lancar_nota()    -> cria o que faltar + MOVIMENTO (APAGAR) + PARCELA(S), em uma única transação
 """
-from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
@@ -19,6 +18,7 @@ from app.schemas.analise import AnaliseResponse, ItemAnalise, LancamentoResponse
 from app.schemas.cadastros import somente_digitos
 from app.schemas.invoice import ExtracaoNotaFiscalResponse
 from app.services.conta_service import nova_parcela, renumerar_parcelas
+from fastapi import HTTPException
 from app.services.erros import RegraNegocioError
 
 CATEGORIA_PADRAO = "OUTRAS DESPESAS"
@@ -37,15 +37,7 @@ def _categorias_da_nota(nota: ExtracaoNotaFiscalResponse) -> List[str]:
     return categorias or [CATEGORIA_PADRAO]
 
 
-@dataclass
-class _Consulta:
-    """Resultado interno da consulta, reaproveitado pela análise e pelo lançamento."""
-    fornecedor: Optional[Pessoa]
-    faturado: Optional[Pessoa]
-    despesas: List[tuple] = field(default_factory=list)  # (descricao, Classificacao | None)
-
-
-def _consultar(db: Session, nota: ExtracaoNotaFiscalResponse) -> _Consulta:
+def _consultar(db: Session, nota: ExtracaoNotaFiscalResponse):
     pessoas = PessoaRepository(db)
     classificacoes = ClassificacaoRepository(db)
 
@@ -56,7 +48,7 @@ def _consultar(db: Session, nota: ExtracaoNotaFiscalResponse) -> _Consulta:
         None if somente_digitos(nota.faturado.cpf) else pessoas.buscar_por_nome(nota.faturado.nome_completo, "FATURADO")
     )
     despesas = [(cat, classificacoes.buscar_por_descricao(cat, "DESPESA")) for cat in _categorias_da_nota(nota)]
-    return _Consulta(fornecedor=fornecedor, faturado=faturado, despesas=despesas)
+    return fornecedor, faturado, despesas
 
 
 def _item(registro, descricao: Optional[str], documento: Optional[str] = None) -> ItemAnalise:
@@ -70,16 +62,16 @@ def _item(registro, descricao: Optional[str], documento: Optional[str] = None) -
 
 
 def analisar_nota(db: Session, nota: ExtracaoNotaFiscalResponse) -> AnaliseResponse:
-    consulta = _consultar(db, nota)
+    fornecedor, faturado, despesas = _consultar(db, nota)
 
     duplicado = None
-    if consulta.fornecedor:
-        duplicado = MovimentoRepository(db).buscar_duplicado("APAGAR", nota.numero_nota_fiscal, consulta.fornecedor.id)
+    if fornecedor:
+        duplicado = MovimentoRepository(db).buscar_duplicado("APAGAR", nota.numero_nota_fiscal, fornecedor.id)
 
     return AnaliseResponse(
-        fornecedor=_item(consulta.fornecedor, nota.fornecedor.razao_social, nota.fornecedor.cnpj),
-        faturado=_item(consulta.faturado, nota.faturado.nome_completo, nota.faturado.cpf),
-        despesas=[_item(c, descricao) for descricao, c in consulta.despesas],
+        fornecedor=_item(fornecedor, nota.fornecedor.razao_social, nota.fornecedor.cnpj),
+        faturado=_item(faturado, nota.faturado.nome_completo, nota.faturado.cpf),
+        despesas=[_item(c, descricao) for descricao, c in despesas],
         movimento_existente_id=duplicado.id if duplicado else None,
     )
 
@@ -99,23 +91,22 @@ def _montar_parcelas(nota: ExtracaoNotaFiscalResponse, valor_total: Decimal) -> 
     for p in extraidas:
         valor = Decimal(str(p.valor)) if p.valor else rateio
         if valor <= 0:
-            raise RegraNegocioError("Não foi possível determinar o valor de todas as parcelas da nota.")
+            raise HTTPException(status_code=400, detail="Não foi possível determinar o valor de todas as parcelas da nota.")
         parcelas.append(nova_parcela(_para_data(p.data_vencimento) or vencimento_padrao, valor))
     return parcelas
 
 
 def lancar_nota(db: Session, nota: ExtracaoNotaFiscalResponse) -> LancamentoResponse:
     if not (nota.fornecedor.razao_social or "").strip():
-        raise RegraNegocioError("A nota não possui fornecedor identificado. Não é possível lançar.")
+        raise HTTPException(status_code=400, detail="A nota não possui fornecedor identificado. Não é possível lançar.")
 
-    consulta = _consultar(db, nota)
+    fornecedor, faturado, despesas = _consultar(db, nota)
     pessoas = PessoaRepository(db)
     classificacoes_repo = ClassificacaoRepository(db)
     criados: List[str] = []
     reativados: List[str] = []
 
     # 1. FORNECEDOR
-    fornecedor = consulta.fornecedor
     if fornecedor is None:
         fornecedor = pessoas.adicionar(Pessoa(
             tipo="FORNECEDOR",
@@ -130,7 +121,7 @@ def lancar_nota(db: Session, nota: ExtracaoNotaFiscalResponse) -> LancamentoResp
         reativados.append(f"Fornecedor (ID {fornecedor.id})")
 
     # 2. FATURADO (opcional: cupons podem não ter destinatário)
-    faturado = consulta.faturado
+    # 2. FATURADO
     if faturado is None and (nota.faturado.nome_completo or "").strip():
         faturado = pessoas.adicionar(Pessoa(
             tipo="FATURADO",
@@ -145,7 +136,7 @@ def lancar_nota(db: Session, nota: ExtracaoNotaFiscalResponse) -> LancamentoResp
 
     # 3. DESPESA(S)
     classificacoes: List[Classificacao] = []
-    for descricao, classificacao in consulta.despesas:
+    for descricao, classificacao in despesas:
         if classificacao is None:
             classificacao = classificacoes_repo.adicionar(
                 Classificacao(tipo="DESPESA", descricao=descricao, status=STATUS_ATIVO)
@@ -168,7 +159,7 @@ def lancar_nota(db: Session, nota: ExtracaoNotaFiscalResponse) -> LancamentoResp
     if valor_total <= 0:
         valor_total = sum((Decimal(str(p.valor or 0)) for p in nota.parcelas), Decimal(0)).quantize(Decimal("0.01"))
     if valor_total <= 0:
-        raise RegraNegocioError("A nota não possui valor total. Não é possível lançar.")
+        raise HTTPException(status_code=400, detail="A nota não possui valor total. Não é possível lançar.")
 
     movimento = MovimentoContas(
         tipo="APAGAR",

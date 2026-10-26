@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Response, status, Header
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+import json
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.config import settings
@@ -20,7 +22,7 @@ from app.dependencies import obter_usuario_sessao
 from app.routers import cadastros, lancamento, paginas
 from app.schemas.invoice import ExtracaoNotaFiscalResponse
 from app.services.erros import RegraNegocioError
-from app.services.gemini_service import extrair_dados_nota_fiscal
+from app.services.gemini_service import extrair_dados_nota_fiscal_stream
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -43,6 +45,8 @@ app = FastAPI(
 @app.exception_handler(RegraNegocioError)
 async def regra_negocio_handler(_request: Request, exc: RegraNegocioError):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.mensagem})
+
+
 
 # -------------------------------------------------------------
 # Middleware de Segurança: Headers HTTP
@@ -74,7 +78,7 @@ templates = Jinja2Templates(directory=str(templates_dir))
 # Cadastros (CRUD), análise/lançamento da nota e páginas HTML dos cadastros
 app.include_router(cadastros.router)
 app.include_router(lancamento.router)
-app.include_router(paginas.criar_router(templates))
+app.include_router(paginas.router)
 
 
 class LoginRequest(BaseModel):
@@ -160,7 +164,9 @@ async def pagina_inicial(request: Request):
         name="index.html",
         context={
             "usuario": usuario,
-            "menu": "extracao"
+            "menu": "extracao",
+            "commit_hash": settings.GITHUB_COMMIT_HASH,
+            "commit_url": settings.commit_url,
         }
     )
 
@@ -232,23 +238,26 @@ async def processar_nota(
             detail="Arquivo inválido. O conteúdo não corresponde a um documento PDF genuíno."
         )
 
-    # 6. Extração com a IA utilizando a chave em memória RAM (sem gravação)
-    try:
-        resultado = extrair_dados_nota_fiscal(
-            pdf_bytes=conteudo_pdf,
-            api_key=chave_gemini,
-            filename=nome_arquivo
-        )
-        return resultado
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
-    except RuntimeError as re:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(re))
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro durante o processamento da nota fiscal: {str(e)}"
-        )
+    # 6. Extração com a IA com streaming de eventos SSE em tempo real
+    async def gerador_eventos():
+        try:
+            async for evento in extrair_dados_nota_fiscal_stream(
+                pdf_bytes=conteudo_pdf,
+                api_key=chave_gemini
+            ):
+                yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
+        except Exception as e_stream:
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro no processamento: {str(e_stream)}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        gerador_eventos(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 if __name__ == "__main__":
